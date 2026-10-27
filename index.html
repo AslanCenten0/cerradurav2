@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#09090b" />
+  <title>Nexus Access — Biometría Facial & Control de Acceso</title>
+
+  <!-- PWA Manifest & Icons -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+
+  <!-- Tipografías Oficiales -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Estilos de la Aplicación -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Estilos adicionales para el apartado de Control y Pestañas -->
+  <style>
+    /* ── NAVEGACIÓN POR PESTAÑAS MINIMALISTA ── */
+    .tab-navigator {
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-full);
+      padding: 3px;
+      gap: 4px;
+    }
+    .tab-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .tab-btn.active {
+      background: var(--surface-raised);
+      color: var(--text-primary);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      border: 1px solid var(--surface-border-strong);
+    }
+    .tab-content {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      gap: 14px;
+    }
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* ── APARTADO DE CONTROL Y OPCIONES ── */
+    .panel-scroll {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-right: 2px;
+    }
+    .panel-scroll::-webkit-scrollbar { width: 4px; }
+    .panel-scroll::-webkit-scrollbar-thumb { background: var(--surface-border-strong); border-radius: 4px; }
+
+    .opt-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .opt-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .opt-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .opt-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .opt-badge.badge-red { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid var(--accent-rose); }
+    .opt-badge.badge-green { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border: 1px solid var(--accent-emerald); }
+    .opt-badge.badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
+
+    .opt-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .status-hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: var(--surface-raised);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+    }
+    .status-hero-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .status-hero-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .status-hero-val {
+      font-size: 18px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .btn-action-primary {
+      width: 100%;
+      background: var(--text-primary);
+      color: var(--bg);
+      border: none;
+      padding: 12px 14px;
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .btn-action-primary:hover { background: #fff; }
+    .btn-action-primary:active { transform: scale(0.98); }
+    .btn-action-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-action-secondary {
+      width: 100%;
+      background: var(--surface-raised);
+      color: var(--text-primary);
+      border: 1px solid var(--surface-border);
+      padding: 12px 14px;
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .btn-action-secondary:hover { background: #222228; border-color: var(--surface-border-strong); }
+    .btn-action-secondary:active { transform: scale(0.98); }
+
+    /* Logs minimalistas */
+    .log-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .log-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--surface-raised);
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+    }
+    .log-tag {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+
+  <!-- Biblioteca Face-API (TensorFlow.js WebGL) -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+</head>
+<body>
+
+  <!-- Canvas de Fondo Interactivo (React Bits Aurora + Squares Grid) -->
+  <canvas id="bgCanvas" class="bg-canvas"></canvas>
+
+  <div class="app-container">
+
+    <!-- ── BARRA SUPERIOR ── -->
+    <header class="nav-bar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div class="brand-name shiny-text">NEXUS <span class="brand-thin">ACCESS</span></div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Botón de Descargar / Instalar App (PWA) -->
+        <button id="btnInstallApp" class="btn-pill" title="Instalar / Descargar aplicación">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Instalar</span>
+        </button>
+
+        <!-- Conectar Bluetooth BLE -->
+        <button id="btnBluetooth" class="btn-pill" title="Conectar ESP32 por Web Bluetooth">
+          <svg class="icon-bt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>
+          </svg>
+          <span id="btStatusLabel">Conectar BLE</span>
+        </button>
+
+        <!-- Administrador de Usuarios Enrolados -->
+        <button id="btnOpenUsers" class="btn-icon" title="Ver rostros autorizados">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span id="badgeUserCount" class="badge-count">0</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── SELECTOR DE APARTADOS (TABS) ── -->
+    <div class="tab-navigator">
+      <button class="tab-btn active" id="btnTabBiometria" onclick="cambiarApartado('biometria')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+          <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+          <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+        </svg>
+        Reconocimiento Facial
+      </button>
+      <button class="tab-btn" id="btnTabOpciones" onclick="cambiarApartado('opciones')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        Panel de Control
+      </button>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         APARTADO 1: RECONOCIMIENTO FACIAL & CÁMARA (BIOMETRÍA)
+         ══════════════════════════════════════════════════════════════════ -->
+    <main id="tabBiometria" class="tab-content active camera-stage">
+
+      <!-- Viewport de la Cámara -->
+      <div class="camera-wrapper">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="overlayCanvas"></canvas>
+
+        <!-- Retícula de Escaneo Táctico -->
+        <div id="scanReticle" class="scan-reticle">
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner bl"></div>
+          <div class="corner br"></div>
+          <div class="scan-beam"></div>
+        </div>
+
+        <!-- Toast de Notificaciones -->
+        <div id="feedbackToast" class="feedback-toast">
+          <span class="dot"></span>
+          <span id="toastMessage">Sistema iniciado</span>
+        </div>
+
+        <!-- Pantalla de Carga de Redes Neuronales -->
+        <div id="loaderSplash" class="loader-splash">
+          <div class="spinner"></div>
+          <div id="loaderMessage">Iniciando cámara y biometría...</div>
+          <button id="btnEnableCamera" class="btn-pill" style="display: none; margin-top: 10px; border-color: var(--accent-emerald); color: var(--accent-emerald);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            Activar Cámara
+          </button>
+        </div>
+      </div>
+
+      <!-- Barra de Estado de Biometría -->
+      <div class="status-shelf">
+        <div class="status-indicator">
+          <div id="statusPulse" class="pulse-ring"></div>
+          <span id="statusText" class="status-text">Esperando rostro...</span>
+        </div>
+        <div class="status-meta">
+          <span id="cooldownTimer"></span>
+          <span id="fpsCounter">-- FPS</span>
+        </div>
+      </div>
+
+      <!-- Controles Inferiores de Biometría -->
+      <div class="control-deck">
+        <button id="btnManualUnlock" class="btn-primary" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+          </svg>
+          Abrir Manual
+        </button>
+
+        <button id="btnRegisterFace" class="btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Enrolar Rostro
+        </button>
+      </div>
+
+    </main>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         APARTADO 2: CONTROL DE CERRADURA & TODAS LAS OPCIONES
+         ══════════════════════════════════════════════════════════════════ -->
+    <section id="tabOpciones" class="tab-content">
+      
+      <div class="panel-scroll">
+
+        <!-- 1. Estado General de la Cerradura -->
+        <div class="status-hero">
+          <div class="status-hero-info">
+            <span class="status-hero-label">Estado de la Cerradura</span>
+            <div class="status-hero-val">
+              <span id="panelPulseDot" class="pulse-ring" style="background-color: var(--accent-rose); box-shadow: 0 0 8px var(--accent-rose);"></span>
+              <span id="panelEstadoTexto">CERRADO</span>
+            </div>
+          </div>
+          <span id="panelEstadoBadge" class="opt-badge badge-red">BLOQUEADA</span>
+        </div>
+
+        <!-- 2. Apertura Directa y Desbloqueo -->
+        <div class="opt-card">
+          <div class="opt-header">
+            <span class="opt-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+              </svg>
+              Control de Servo (Apertura)
+            </span>
+            <span class="opt-badge badge-green" id="panelMetodoUltimo">REMOTO</span>
+          </div>
+          <p class="opt-desc">Envía el pulso de giro de 180° al servomotor para liberar el cerrojo físico. Cuenta con cierre automático tras 5 segundos.</p>
+          <div class="grid-2">
+            <button class="btn-action-primary" id="btnAccionAbrir" onclick="ejecutarAperturaRemota()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"></path>
+              </svg>
+              Abrir Puerta
+            </button>
+            <button class="btn-action-secondary" id="btnAccionCerrar" onclick="ejecutarCierreForzado()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              Cerrar Servo
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. Modo RFID Libre (Bypass 60 segundos) -->
+        <div class="opt-card">
+          <div class="opt-header">
+            <span class="opt-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+              </svg>
+              Modo RFID Libre (Bypass)
+            </span>
+            <span class="opt-badge badge-amber" id="badgeRfidLibre">INACTIVO</span>
+          </div>
+          <p class="opt-desc">Habilita la apertura para cualquier tarjeta o llavero RFID durante 60 segundos sin requerir el UID autorizado registrado.</p>
+          <button class="btn-action-secondary" id="btnRfidLibre" onclick="activarRfidLibre()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span id="textoBtnRfid">Activar Bypass 60s</span>
+          </button>
+        </div>
+
+
+        <!-- 5. Auditoría y Registro de Eventos -->
+        <div class="opt-card">
+          <div class="opt-header">
+            <span class="opt-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+              Registro de Auditoría (Últimos Accesos)
+            </span>
+            <span class="opt-badge badge-green" style="font-size: 9px;">SYNC</span>
+          </div>
+          <ul class="log-list" id="listaLogs">
+            <li class="log-item">
+              <span><strong>APERTURA</strong> — Biometría Facial</span>
+              <span class="log-tag badge-green">ÉXITO</span>
+            </li>
+            <li class="log-item">
+              <span><strong>APERTURA</strong> — Tarjeta RFID UID</span>
+              <span class="log-tag badge-green">ÉXITO</span>
+            </li>
+            <li class="log-item">
+              <span><strong>CONTROL</strong> — Web Vercel Cloud</span>
+              <span class="log-tag badge-green">SYNC</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         MODAL 1: GESTIÓN DE ROSTROS ENROLADOS
+         ══════════════════════════════════════════════════════════════════ -->
+    <div id="modalUsers" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Rostros Autorizados</h3>
+          <button id="btnCloseModal" class="btn-close" title="Cerrar">&times;</button>
+        </div>
+        <p class="modal-hint">Los vectores biométricos se comparan localmente en el dispositivo para máxima privacidad y seguridad.</p>
+        
+        <ul id="userList" class="user-list">
+          <li class="empty-state">No hay rostros registrados aún.</li>
+        </ul>
+
+        <div class="modal-footer">
+          <button id="btnClearAllUsers" class="btn-text-danger">Eliminar Todos los Rostros</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         MODAL 2: NOMBRAR NUEVO ROSTRO
+         ══════════════════════════════════════════════════════════════════ -->
+    <div id="modalPromptName" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Enrolar Nuevo Rostro</h3>
+        </div>
+        <p class="modal-hint">Mantén tu rostro centrado e iluminado dentro de la retícula antes de guardar.</p>
+        
+        <label class="input-label" for="inputUserName">Nombre de la persona</label>
+        <input type="text" id="inputUserName" class="cyber-input" placeholder="Ej: Matias, Profe, Mama..." maxlength="24" autocomplete="off" />
+
+        <div class="modal-footer">
+          <button id="btnCancelEnroll" class="btn-secondary" style="flex: initial;">Cancelar</button>
+          <button id="btnConfirmEnroll" class="btn-primary" style="flex: initial;">Guardar Rostro</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Controlador Lógico del Switcher de Apartados y Panel de Opciones -->
+  <script>
+    function cambiarApartado(tab) {
+      const tabBio = document.getElementById('tabBiometria');
+      const tabOpt = document.getElementById('tabOpciones');
+      const btnBio = document.getElementById('btnTabBiometria');
+      const btnOpt = document.getElementById('btnTabOpciones');
+
+      if (tab === 'biometria') {
+        tabBio.classList.add('active');
+        tabOpt.classList.remove('active');
+        btnBio.classList.add('active');
+        btnOpt.classList.remove('active');
+      } else {
+        tabBio.classList.remove('active');
+        tabOpt.classList.add('active');
+        btnBio.classList.remove('active');
+        btnOpt.classList.add('active');
+      }
+    }
+
+    // ── LÓGICA DE CONTROL DEL PANEL DE OPCIONES ──
+    let tiempoBypassRfid = 0;
+    let timerRfidInterval = null;
+
+    function ejecutarAperturaRemota() {
+      // Disparador configurable (sobreescrito abajo por Firebase)
+      if (window._firebaseAbrirRemoto) {
+        window._firebaseAbrirRemoto();
+        return;
+      }
+
+      const texto = document.getElementById('panelEstadoTexto');
+      const badge = document.getElementById('panelEstadoBadge');
+      const dot = document.getElementById('panelPulseDot');
+      const btnAbrir = document.getElementById('btnAccionAbrir');
+
+      if (window.decryptText) {
+        window.decryptText(texto, "ABIERTO", 450, 30);
+      } else {
+        texto.textContent = "ABIERTO";
+      }
+
+      badge.className = "opt-badge badge-green";
+      badge.textContent = "DESBLOQUEADO";
+      dot.style.backgroundColor = "var(--accent-emerald)";
+      dot.style.boxShadow = "0 0 10px var(--accent-emerald)";
+      btnAbrir.disabled = true;
+
+      agregarLog("APERTURA", "Panel Web Vercel");
+
+      // Cierre automático simulado tras 5 segundos
+      setTimeout(() => {
+        ejecutarCierreForzado();
+        btnAbrir.disabled = false;
+      }, 5000);
+    }
+
+    function ejecutarCierreForzado() {
+      const texto = document.getElementById('panelEstadoTexto');
+      const badge = document.getElementById('panelEstadoBadge');
+      const dot = document.getElementById('panelPulseDot');
+
+      if (window.decryptText) {
+        window.decryptText(texto, "CERRADO", 450, 30);
+      } else {
+        texto.textContent = "CERRADO";
+      }
+
+      badge.className = "opt-badge badge-red";
+      badge.textContent = "BLOQUEADA";
+      dot.style.backgroundColor = "var(--accent-rose)";
+      dot.style.boxShadow = "0 0 10px var(--accent-rose)";
+    }
+
+    function activarRfidLibre() {
+      const btn = document.getElementById('textoBtnRfid');
+      const badge = document.getElementById('badgeRfidLibre');
+      let segs = 60;
+
+      badge.className = "opt-badge badge-green";
+      badge.textContent = "ACTIVO 60s";
+      agregarLog("RFID LIBRE", "Bypass 60 segs");
+
+      clearInterval(timerRfidInterval);
+      timerRfidInterval = setInterval(() => {
+        segs--;
+        btn.textContent = `Bypass Activo (${segs}s)`;
+        badge.textContent = `ACTIVO ${segs}s`;
+
+        if (segs <= 0) {
+          clearInterval(timerRfidInterval);
+          btn.textContent = "Activar Bypass 60s";
+          badge.className = "opt-badge badge-amber";
+          badge.textContent = "INACTIVO";
+        }
+      }, 1000);
+    }
+
+
+    function agregarLog(tipo, metodo) {
+      const lista = document.getElementById('listaLogs');
+      const li = document.createElement('li');
+      li.className = 'log-item';
+      li.innerHTML = `
+        <span><strong>${tipo}</strong> — ${metodo}</span>
+        <span class="log-tag badge-green">AHORA</span>
+      `;
+      lista.insertBefore(li, lista.firstChild);
+      if (lista.children.length > 5) {
+        lista.removeChild(lista.lastChild);
+      }
+    }
+  </script>
+
+  <!-- ── SINCRONIZACIÓN NUBE (FIREBASE REALTIME DATABASE) ── -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+
+    // ── CONFIGURACIÓN DE TU BASE DE DATOS EN LA NUBE ──
+    const firebaseConfig = {
+      databaseURL: "https://nexus-cerradura-default-rtdb.firebaseio.com"
+    };
+
+    let db = null;
+    try {
+      if (firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("TU_PROYECTO")) {
+        const app = initializeApp(firebaseConfig);
+        db = getDatabase(app);
+        console.log("🔥 Firebase Realtime Database conectado.");
+
+        // 1. Escuchar estado en vivo emitido por el ESP32
+        const cerraduraRef = ref(db, 'cerradura');
+        onValue(cerraduraRef, (snapshot) => {
+          const data = snapshot.val();
+          if (!data) return;
+
+          const texto = document.getElementById('panelEstadoTexto');
+          const badge = document.getElementById('panelEstadoBadge');
+          const dot = document.getElementById('panelPulseDot');
+          const ultimoMetodo = document.getElementById('panelMetodoUltimo');
+          const btnAbrir = document.getElementById('btnAccionAbrir');
+
+          if (ultimoMetodo && data.metodo) {
+            ultimoMetodo.textContent = data.metodo;
+          }
+
+          if (data.estado === "ABIERTO") {
+            if (window.decryptText) window.decryptText(texto, "ABIERTO", 450, 30);
+            else texto.textContent = "ABIERTO";
+
+            badge.className = "opt-badge badge-green";
+            badge.textContent = "DESBLOQUEADO";
+            dot.style.backgroundColor = "var(--accent-emerald)";
+            dot.style.boxShadow = "0 0 10px var(--accent-emerald)";
+            btnAbrir.disabled = true;
+            agregarLog("APERTURA", data.metodo || "ESP32");
+          } else if (data.estado === "BLOQUEADO") {
+            if (window.decryptText) window.decryptText(texto, "BLOQUEADO", 450, 30);
+            else texto.textContent = "BLOQUEADO";
+
+            badge.className = "opt-badge badge-amber";
+            badge.textContent = "SEGURIDAD";
+            dot.style.backgroundColor = "var(--accent-amber)";
+            dot.style.boxShadow = "0 0 10px var(--accent-amber)";
+            btnAbrir.disabled = true;
+            agregarLog("BLOQUEO", "Fuerza Bruta");
+          } else {
+            if (window.decryptText) window.decryptText(texto, "CERRADO", 450, 30);
+            else texto.textContent = "CERRADO";
+
+            badge.className = "opt-badge badge-red";
+            badge.textContent = "BLOQUEADA";
+            dot.style.backgroundColor = "var(--accent-rose)";
+            dot.style.boxShadow = "0 0 10px var(--accent-rose)";
+            btnAbrir.disabled = false;
+          }
+        });
+      }
+    } catch(err) {
+      console.warn("Firebase no inicializado:", err);
+    }
+
+    // 2. Función de apertura remota que escribe en la nube
+    window._firebaseAbrirRemoto = async function() {
+      const btnAbrir = document.getElementById('btnAccionAbrir');
+      btnAbrir.disabled = true;
+
+      if (db) {
+        try {
+          agregarLog("ORDEN", "Enviando a la nube...");
+          await set(ref(db, 'cerradura/comando_abrir'), true);
+        } catch(e) {
+          console.error("Error al escribir en Firebase:", e);
+          btnAbrir.disabled = false;
+        }
+      }
+    };
+  </script>
+
+  <!-- Orquestador Principal (Módulos ES6) -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

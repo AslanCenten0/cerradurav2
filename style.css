@@ -612,3 +612,114 @@ html, body {
 .cyber-input:focus {
   border-color: var(--text-primary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   REACT BITS — MODERN ENHANCEMENTS & ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Canvas de Fondo Interactivo (Aurora + Grid) */
+.bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* React Bits: Spotlight Card (Efecto de halo que sigue el cursor/tacto) */
+.spotlight-card, .opt-card, .status-hero, .status-shelf {
+  position: relative;
+  background: rgba(18, 18, 22, 0.72) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--surface-border) !important;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.spotlight-card::before, .opt-card::before, .status-hero::before, .status-shelf::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(280px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(16, 185, 129, 0.12), transparent 75%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.spotlight-card:hover::before, .spotlight-card:active::before,
+.opt-card:hover::before, .opt-card:active::before,
+.status-hero:hover::before, .status-hero:active::before,
+.status-shelf:hover::before, .status-shelf:active::before {
+  opacity: 1;
+}
+
+.spotlight-card:hover, .opt-card:hover, .status-hero:hover, .status-shelf:hover {
+  border-color: rgba(16, 185, 129, 0.28) !important;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.08);
+}
+
+.spotlight-card > *, .opt-card > *, .status-hero > *, .status-shelf > * {
+  position: relative;
+  z-index: 2;
+}
+
+.spotlight-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* React Bits: Shiny Text (Reflejo metálico que viaja por el texto) */
+.shiny-text {
+  background: linear-gradient(110deg, #f4f4f5 20%, #ffffff 40%, rgba(16, 185, 129, 0.9) 50%, #ffffff 60%, #f4f4f5 80%);
+  background-size: 200% auto;
+  color: transparent !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  animation: shinyWave 5s linear infinite;
+}
+
+@keyframes shinyWave {
+  to { background-position: -200% center; }
+}
+
+/* React Bits: Click Spark (Partículas micro-interactivas al presionar) */
+.spark-container {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 99999;
+}
+
+.spark-particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+  transform: translate(-50%, -50%);
+  animation: sparkFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes sparkFade {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.2);
+  }
+}
+

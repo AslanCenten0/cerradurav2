@@ -7,6 +7,10 @@
 
 import { BluetoothController } from './bluetooth.js';
 import { FaceRecognitionEngine } from './recognition.js';
+import { initBackgroundGrid, initSpotlightCards, initClickSparks, decryptText } from './effects.js';
+
+// Exponer decryptText para que el panel de control pueda usarlo
+window.decryptText = decryptText;
 
 // Cooldown de 6 segundos tras apertura exitosa
 const COOLDOWN_DURATION = 6000;
@@ -50,11 +54,22 @@ class NexusApp {
       inputUserName: document.getElementById('inputUserName'),
       btnCancelEnroll: document.getElementById('btnCancelEnroll'),
       btnConfirmEnroll: document.getElementById('btnConfirmEnroll'),
+
+      btnInstallApp: document.getElementById('btnInstallApp'),
+      btnEnableCamera: document.getElementById('btnEnableCamera'),
     };
   }
 
   async init() {
-    console.log("🚀 Iniciando Nexus Access Client...");
+    // 0. Inicializar Efectos Visuales React Bits
+    initBackgroundGrid('bgCanvas');
+    initSpotlightCards();
+    initClickSparks();
+
+    const brandName = document.querySelector('.brand-name');
+    if (brandName) {
+      decryptText(brandName, "NEXUS ACCESS", 900, 35);
+    }
 
     // 1. Inicializar PWA Service Worker
     this.registerServiceWorker();
@@ -69,21 +84,12 @@ class NexusApp {
     };
 
     try {
-      await this.engine.startCamera();
       await this.engine.loadModels();
-
-      // Ocultar splash loader suavemente
-      this.dom.loader.classList.add('hidden');
-      this.showToast("Cámara y biometría activas");
-      
-      // Configurar escucha de detección
-      this.engine.onFaceDetected = (result) => this.handleFaceDetection(result);
-      this.engine.startLoop();
-
-    } catch (err) {
-      this.dom.loaderMsg.textContent = "Error al iniciar: Permite el acceso a la cámara.";
-      console.error(err);
+    } catch (errModels) {
+      console.warn("Advertencia cargando modelos:", errModels);
     }
+
+    await this.tryStartCamera();
 
     // 4. Conectar Eventos de la Interfaz
     this.bindUIEvents();
@@ -91,6 +97,36 @@ class NexusApp {
 
     // 5. Medidor de FPS
     this.startFPSMeter();
+  }
+
+  async tryStartCamera() {
+    try {
+      this.dom.loaderMsg.textContent = "Conectando cámara...";
+      await this.engine.startCamera();
+
+      // Ocultar splash loader suavemente
+      this.dom.loader.classList.add('hidden');
+      this.showToast("Cámara y biometría activas");
+
+      // Configurar escucha de detección
+      this.engine.onFaceDetected = (result) => this.handleFaceDetection(result);
+      this.engine.startLoop();
+
+      if (this.dom.btnEnableCamera) {
+        this.dom.btnEnableCamera.style.display = 'none';
+      }
+    } catch (err) {
+      console.error("Error al iniciar la cámara:", err);
+      this.dom.loaderMsg.textContent = "Acceso a cámara requerido para la biometría.";
+      
+      if (this.dom.btnEnableCamera) {
+        this.dom.btnEnableCamera.style.display = 'inline-flex';
+        this.dom.btnEnableCamera.onclick = async () => {
+          this.dom.loaderMsg.textContent = "Pidiendo permisos de cámara...";
+          await this.tryStartCamera();
+        };
+      }
+    }
   }
 
   /**
@@ -191,6 +227,34 @@ class NexusApp {
    * Enlaza botones y modales
    */
   bindUIEvents() {
+    // Botón de Descargar / Instalar App (PWA)
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      if (this.dom.btnInstallApp) {
+        this.dom.btnInstallApp.style.display = 'inline-flex';
+      }
+    });
+
+    if (this.dom.btnInstallApp) {
+      this.dom.btnInstallApp.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log(`Instalación PWA: ${outcome}`);
+          deferredPrompt = null;
+        } else {
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+          if (isIOS) {
+            alert("📲 Para instalar en iPhone / iPad:\n\n1. Toca el botón Compartir de Safari (icono 📤 en la barra inferior).\n2. Selecciona 'Añadir a la pantalla de inicio'.");
+          } else {
+            alert("📲 Para instalar en Android o PC:\n\n1. Toca los tres puntos (⋮) arriba a la derecha en Chrome.\n2. Presiona 'Instalar aplicación' o 'Añadir a pantalla de inicio'.");
+          }
+        }
+      });
+    }
+
     // Botón Bluetooth
     this.dom.btnBluetooth.addEventListener('click', async () => {
       this.initAudio();

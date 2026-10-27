@@ -60,25 +60,55 @@ export class FaceRecognitionEngine {
    */
   async startCamera() {
     try {
-      const constraints = {
-        audio: false,
-        video: {
-          facingMode: 'user', // Cámara frontal en celulares
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        }
-      };
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Este dispositivo no soporta acceso a la cámara o requiere HTTPS.");
+      }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream = null;
+      // 1. Intentar con cámara frontal optimizada
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          }
+        });
+      } catch (err1) {
+        console.warn("Fallo con opciones ideales de cámara, reintentando con fallback:", err1);
+        // 2. Fallback a cualquier cámara disponible
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true
+        });
+      }
+
       this.video.srcObject = stream;
+      this.video.setAttribute('playsinline', '');
+      this.video.setAttribute('muted', '');
+      this.video.muted = true;
 
       return new Promise((resolve) => {
-        this.video.onloadedmetadata = () => {
-          this.video.play();
+        let resolved = false;
+        const doResolve = () => {
+          if (resolved) return;
+          resolved = true;
           this.adjustCanvasDimensions();
           window.addEventListener('resize', () => this.adjustCanvasDimensions());
+          this.video.play().catch(e => console.warn("Video play:", e));
           resolve(true);
         };
+
+        if (this.video.readyState >= 2) {
+          doResolve();
+        } else {
+          this.video.onloadeddata = doResolve;
+          this.video.onloadedmetadata = doResolve;
+        }
+
+        // Timeout de seguridad de 2.5s para no bloquear la aplicación
+        setTimeout(doResolve, 2500);
       });
     } catch (err) {
       console.error("Error accediendo a la cámara:", err);
