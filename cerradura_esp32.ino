@@ -1,8 +1,9 @@
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  NEXUS-7 — Cerradura Inteligente Autónoma IoT                           ║
-// ║  ESP32 + RFID RC522 + Servo + Sincronización Nube Firebase              ║
-// ║  (Teclado, Servidor Web local y Bot de Telegram eliminados)             ║
-// ║  100% Autónomo: Solo requiere fuente de 5V y conexión Wi-Fi             ║
+// ║  NEXUS-7 — Cerradura Inteligente Autónoma IoT (Versión Estable v5.0)     ║
+// ║  ESP32 + RFID RC522 + Servo (Pin 18) + Sincronización Firebase          ║
+// ║  - Servo en Pin 18 con detach automático (cero zumbido/vibración)       ║
+// ║  - SPI RC522 en Pin 4 (SCK) para no colisionar con el Servo             ║
+// ║  - Polling optimizado a Firebase sin bloqueos de red                     ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 #include <WiFi.h>
@@ -21,21 +22,28 @@ const char* password = "educar_2018";
 
 // ────────────────────────────────────────────────────────────
 //  2. CONFIGURACIÓN FIREBASE REALTIME DATABASE
-//  (Reemplaza con la URL de tu base de datos de Firebase)
 // ────────────────────────────────────────────────────────────
 const String FIREBASE_HOST = "https://nexus-cerradura-default-rtdb.firebaseio.com";
 
 // ────────────────────────────────────────────────────────────
-//  3. HARDWARE: SERVO & RFID & LEDS
+//  3. HARDWARE: PINES Y DEFINICIONES
 // ────────────────────────────────────────────────────────────
+// Servo en GPIO 18
+#define PIN_SERVO 18
 Servo miServo;
-#define PIN_SERVO 4
 
-#define SS_PIN  5
-#define RST_PIN 22
-MFRC522 mfrc522(SS_PIN, RST_PIN);
-byte usuarioAutorizado[4] = {0x62, 0x55, 0x14, 0x5C}; // UID de la tarjeta autorizada
+// Lector RFID RC522 (Pines SPI dedicados)
+// IMPORTANTE: SCK se asigna al Pin 4 para que NO colisione con el Servo en el Pin 18
+#define RFID_SCK  4   // Reloj SPI (SCK) -> Pin 4 (Evita conflicto con Servo en Pin 18)
+#define RFID_MISO 19  // MISO -> Pin 19
+#define RFID_MOSI 23  // MOSI -> Pin 23
+#define RFID_SS   5   // SDA / SS -> Pin 5
+#define RFID_RST  22  // RST -> Pin 22
 
+MFRC522 mfrc522(RFID_SS, RFID_RST);
+byte usuarioAutorizado[4] = {0x62, 0x55, 0x14, 0x5C}; // UID de tu tarjeta autorizada
+
+// Indicadores LED
 #define LED_ROJO  15
 #define LED_VERDE  2
 
@@ -48,20 +56,33 @@ String metodoAcceso    = "---";
 unsigned long tiempoApertura       = 0;
 const unsigned long TIEMPO_ABIERTO = 5000UL; // Cierre automático a los 5 segundos
 
-// Temporizador para consultar Firebase
+// Temporizador para consultar Firebase (cada 2 segundos para no ahogar el procesador)
 unsigned long ultimoCheckFirebase   = 0;
-const unsigned long INTERVALO_CHECK = 1200UL; // Consulta cada 1.2 segundos
+const unsigned long INTERVALO_CHECK = 2000UL;
 
 // Modo RFID Libre (Bypass por 60 segundos)
-bool         rfidLibre      = false;
-unsigned long tRfidLibre    = 0;
+bool          rfidLibre      = false;
+unsigned long tRfidLibre     = 0;
 const unsigned long DUR_RFID_LIBRE = 60000UL;
 
-// Declaraciones adelantadas de funciones
+// Declaraciones de funciones
+void moverServo(int angulo);
 void abrirCerradura(const char* metodo);
 void cerrarCerradura();
 void actualizarFirebase(const String& estado, const String& metodo);
 void verificarComandoFirebase();
+
+// ════════════════════════════════════════════════════════════
+//  CONTROL DE SERVO SUAVE Y SIN VIBRACIONES (ANTI-JITTER)
+// ════════════════════════════════════════════════════════════
+void moverServo(int angulo) {
+  // Conectar señal PWM, posicionar, esperar llegada mecánica y desconectar
+  miServo.setPeriodHertz(50);
+  miServo.attach(PIN_SERVO, 500, 2400);
+  miServo.write(angulo);
+  delay(500); // 500ms es suficiente para que el engranaje complete el recorrido
+  miServo.detach(); // Detach apaga los pulsos PWM: elimina vibración, calor y consumo
+}
 
 // ════════════════════════════════════════════════════════════
 //  SINCRONIZACIÓN CON FIREBASE (NUBE)
@@ -69,11 +90,14 @@ void verificarComandoFirebase();
 
 // Actualiza el estado en la nube para que la web en Vercel cambie en vivo
 void actualizarFirebase(const String& estado, const String& metodo) {
-  if (WiFi.status() != WL_CONNECTED || FIREBASE_HOST.indexOf("TU_PROYECTO") >= 0) return;
+  if (WiFi.status() != WL_CONNECTED) return;
   
   WiFiClientSecure client;
-  client.setInsecure(); // No validar certificados SSL para optimizar memoria RAM
+  client.setInsecure();
+  client.setTimeout(2); // Timeout de 2s máximo para no congelar el loop
+  
   HTTPClient https;
+  https.setTimeout(2000);
 
   String url = FIREBASE_HOST + "/cerradura.json";
   if (https.begin(client, url)) {
@@ -86,42 +110,55 @@ void actualizarFirebase(const String& estado, const String& metodo) {
 
 // Revisa si desde la web de Vercel presionaron "Abrir Puerta"
 void verificarComandoFirebase() {
-  if (WiFi.status() != WL_CONNECTED || FIREBASE_HOST.indexOf("TU_PROYECTO") >= 0) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+  // Si la puerta ya está abierta, no hace falta consultar comandos
+  if (estadoCerradura == "ABIERTO") return;
 
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(2);
+  
   HTTPClient https;
+  https.setTimeout(2000);
 
   String url = FIREBASE_HOST + "/cerradura/comando_abrir.json";
   if (https.begin(client, url)) {
     int httpCode = https.GET();
     if (httpCode == 200) {
       String payload = https.getString();
+      payload.trim();
+      https.end(); // Cerrar conexión previa antes de hacer la siguiente
+
       if (payload == "true") {
         Serial.println("🌐 [VERCEL] Orden de apertura remota recibida desde la nube");
         
         // Resetear la orden a false inmediatamente en Firebase
-        https.begin(client, url);
-        https.addHeader("Content-Type", "application/json");
-        https.PUT("false");
+        if (https.begin(client, url)) {
+          https.addHeader("Content-Type", "application/json");
+          https.PUT("false");
+          https.end();
+        }
         
         abrirCerradura("WEB_VERCEL");
+        return;
       }
+    } else {
+      https.end();
     }
-    https.end();
   }
 }
 
 // ════════════════════════════════════════════════════════════
-//  CONTROL DE CERRADURA (SERVO Y LEDS)
+//  ACCIONES DE CERRADURA (SERVO Y LEDS)
 // ════════════════════════════════════════════════════════════
 void abrirCerradura(const char* metodo) {
   metodoAcceso    = metodo;
   estadoCerradura = "ABIERTO";
   
-  miServo.write(180); // Giro de apertura del cerrojo
   digitalWrite(LED_ROJO,  LOW);
   digitalWrite(LED_VERDE, HIGH);
+  moverServo(180); // Giro de apertura mecánica
+  
   tiempoApertura = millis();
 
   // Actualizar la nube en tiempo real (Vercel se pone verde al instante)
@@ -133,9 +170,9 @@ void abrirCerradura(const char* metodo) {
 void cerrarCerradura() {
   estadoCerradura = "CERRADO";
   
-  miServo.write(0); // Giro de bloqueo del cerrojo
   digitalWrite(LED_ROJO,  HIGH);
   digitalWrite(LED_VERDE, LOW);
+  moverServo(0); // Giro de bloqueo mecánico
 
   // Actualizar la nube en tiempo real (Vercel se pone rojo)
   actualizarFirebase("CERRADO", metodoAcceso);
@@ -148,7 +185,7 @@ void cerrarCerradura() {
 // ════════════════════════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(500);
 
   // Configuración de LEDs
   pinMode(LED_ROJO,  OUTPUT);
@@ -156,29 +193,39 @@ void setup() {
   digitalWrite(LED_ROJO,  HIGH);
   digitalWrite(LED_VERDE, LOW);
 
-  // Configuración del Servomotor
-  miServo.attach(PIN_SERVO);
-  miServo.write(0); // Posición inicial cerrada
+  // Posición inicial del Servomotor (bloqueado)
+  moverServo(0);
 
-  // Inicialización del lector RFID RC522
-  SPI.begin();
+  // Inicialización de SPI personalizado para RC522 (SCK=4, MISO=19, MOSI=23, SS=5)
+  // De esta manera el PIN 18 queda 100% exclusivo para el servomotor sin interferencias
+  SPI.begin(RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SS);
   mfrc522.PCD_Init();
+
   Serial.println("\n--- NEXUS-7 CONTROL DE ACCESO ---");
-  Serial.println("Hardware: RFID RC522 + Servo + Firebase Cloud");
+  Serial.printf("Servo Pin: %d | RFID SCK: %d, MISO: %d, MOSI: %d, SS: %d\n", 
+                PIN_SERVO, RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SS);
 
-  // Conexión Wi-Fi
-  Serial.printf("Conectando a Wi-Fi: %s\n", ssid);
+  // Conexión Wi-Fi robusta
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  Serial.printf("Conectando a Wi-Fi: %s", ssid);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  
+  int intentos = 0;
+  while (WiFi.status() != WL_CONNECTED && intentos < 25) {
+    delay(400);
     Serial.print(".");
+    intentos++;
   }
-  Serial.printf("\nWi-Fi Conectado exitosamente. IP: %s\n", WiFi.localIP().toString().c_str());
 
-  // Estado inicial en la nube
-  actualizarFirebase("CERRADO", "INICIO");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\nWi-Fi Conectado. IP: %s\n", WiFi.localIP().toString().c_str());
+    actualizarFirebase("CERRADO", "INICIO");
+  } else {
+    Serial.println("\nWi-Fi no conectado. Operando en modo local (RFID seguirá funcionando).");
+  }
 
-  Serial.println("Sistema 100% operativo y sincronizado con la nube.\n");
+  Serial.println("Sistema 100% operativo y listo.\n");
 }
 
 // ════════════════════════════════════════════════════════════
@@ -204,7 +251,7 @@ void loop() {
     Serial.println("[RFID] Bypass de 60s expirado.");
   }
 
-  // 4. Lectura de tarjeta física RFID
+  // 4. Lectura de tarjeta física RFID (No bloqueante)
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     Serial.print("Tarjeta detectada. UID:");
     for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -224,7 +271,6 @@ void loop() {
         abrirCerradura("RFID");
       } else {
         Serial.println("RFID DENEGADO — Tarjeta no autorizada.");
-        // Parpadeo de advertencia en LED rojo
         digitalWrite(LED_ROJO, LOW); delay(150); digitalWrite(LED_ROJO, HIGH);
       }
     }

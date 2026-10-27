@@ -640,9 +640,14 @@
 
         // 1. Escuchar estado en vivo emitido por el ESP32
         const cerraduraRef = ref(db, 'cerradura');
+        let ultimoEstadoConocido = null;
+        let ultimoMetodoConocido = null;
         onValue(cerraduraRef, (snapshot) => {
           const data = snapshot.val();
           if (!data) return;
+          if (data.estado === ultimoEstadoConocido && data.metodo === ultimoMetodoConocido) return;
+          ultimoEstadoConocido = data.estado;
+          ultimoMetodoConocido = data.metodo;
 
           const texto = document.getElementById('panelEstadoTexto');
           const badge = document.getElementById('panelEstadoBadge');
@@ -691,7 +696,7 @@
     }
 
     // 2. Función de apertura remota que escribe en la nube
-    window._firebaseAbrirRemoto = async function() {
+    window._firebaseAbrirRemoto = async function(metodo = 'Panel Web') {
       const btnAbrir = document.getElementById('btnAccionAbrir');
       btnAbrir.disabled = true;
 

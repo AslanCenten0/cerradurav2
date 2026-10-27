@@ -218,6 +218,8 @@ class NexusApp {
 
     if (this.bt.isConnected) {
       await this.bt.openLock(userName);
+    } else if (window._firebaseAbrirRemoto) {
+      await window._firebaseAbrirRemoto("FACIAL: " + userName);
     } else {
       console.log(`[LOCAL] Apertura concedida para: ${userName} (Sin Bluetooth conectado aún)`);
     }
