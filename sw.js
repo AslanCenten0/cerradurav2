@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nexus-access-v1';
+const CACHE_NAME = 'nexus-access-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -8,7 +8,8 @@ const ASSETS_TO_CACHE = [
   '/js/recognition.js',
   '/js/bluetooth.js',
   '/js/effects.js',
-  '/icon.svg'
+  '/icon.svg',
+  '/icons/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
@@ -38,8 +39,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Ignorar peticiones de extensiones o protocolos no http/https
+  // Ignorar protocolos no http/https
   if (!event.request.url.startsWith('http')) return;
+
+  const url = new URL(event.request.url);
+
+  // NO interceptar peticiones a CDNs externos (Google Fonts, Firebase, jsdelivr, etc.)
+  // Deja que el navegador maneje directamente los headers y tipos MIME correctos
+  if (url.origin !== self.location.origin) {
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
@@ -47,14 +56,17 @@ self.addEventListener('fetch', (event) => {
         return cachedResponse;
       }
       return fetch(event.request).then((networkResponse) => {
-        // Cachear recursos locales automáticamente
-        if (networkResponse.status === 200 && event.request.url.includes(self.location.origin)) {
+        if (networkResponse && networkResponse.status === 200) {
           const clone = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return networkResponse;
-      }).catch(() => {
-        return caches.match('/index.html');
+      }).catch((err) => {
+        // Solo devolver index.html para navegación entre páginas HTML, nunca para estilos o imágenes
+        if (event.request.mode === 'navigate') {
+          return caches.match('/index.html');
+        }
+        return Promise.reject(err);
       });
     })
   );
