@@ -54,6 +54,9 @@ class NexusApp {
       inputUserName: document.getElementById('inputUserName'),
       btnCancelEnroll: document.getElementById('btnCancelEnroll'),
       btnConfirmEnroll: document.getElementById('btnConfirmEnroll'),
+      inputAdminPassword: document.getElementById('inputAdminPassword'),
+      btnTogglePassword: document.getElementById('btnTogglePassword'),
+      enrollErrorMsg: document.getElementById('enrollErrorMsg'),
 
       btnInstallApp: document.getElementById('btnInstallApp'),
       btnEnableCamera: document.getElementById('btnEnableCamera'),
@@ -273,31 +276,95 @@ class NexusApp {
       this.triggerUnlock("Manual");
     });
 
+        // Helper para mensajes de error al enrolar
+    this.showEnrollError = (msg) => {
+      if (this.dom.enrollErrorMsg) {
+        this.dom.enrollErrorMsg.textContent = msg;
+        this.dom.enrollErrorMsg.style.display = 'block';
+      }
+    };
+    this.hideEnrollError = () => {
+      if (this.dom.enrollErrorMsg) {
+        this.dom.enrollErrorMsg.textContent = '';
+        this.dom.enrollErrorMsg.style.display = 'none';
+      }
+    };
+
     // Botón Enrolar Rostro
     this.dom.btnRegisterFace.addEventListener('click', () => {
       this.initAudio();
       this.dom.inputUserName.value = '';
+      if (this.dom.inputAdminPassword) {
+        this.dom.inputAdminPassword.value = '';
+        this.dom.inputAdminPassword.type = 'password';
+      }
+      this.hideEnrollError();
       this.dom.modalPromptName.classList.add('open');
       setTimeout(() => this.dom.inputUserName.focus(), 150);
     });
 
-    // Confirmar Enrolamiento
+    // Toggle para visualizar/ocultar contraseña
+    if (this.dom.btnTogglePassword && this.dom.inputAdminPassword) {
+      this.dom.btnTogglePassword.addEventListener('click', () => {
+        const isPwd = this.dom.inputAdminPassword.type === 'password';
+        this.dom.inputAdminPassword.type = isPwd ? 'text' : 'password';
+      });
+    }
+
+    // Tecla Enter en campos del modal
+    this.dom.inputUserName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (this.dom.inputAdminPassword) this.dom.inputAdminPassword.focus();
+      }
+    });
+    if (this.dom.inputAdminPassword) {
+      this.dom.inputAdminPassword.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.dom.btnConfirmEnroll.click();
+        }
+      });
+    }
+
+    // Confirmar Enrolamiento con Contraseña de Admin (201106)
     this.dom.btnConfirmEnroll.addEventListener('click', async () => {
       const name = this.dom.inputUserName.value.trim();
-      if (!name) return;
+      const password = this.dom.inputAdminPassword ? this.dom.inputAdminPassword.value.trim() : '';
+
+      this.hideEnrollError();
+
+      if (!name) {
+        this.showEnrollError("Ingresa un nombre para el rostro.");
+        this.dom.inputUserName.focus();
+        return;
+      }
+
+      if (password !== '201106') {
+        this.showEnrollError("Contraseña incorrecta. Acceso de administrador denegado.");
+        this.playBeep(200, 0.25);
+        if (this.dom.inputAdminPassword) {
+          this.dom.inputAdminPassword.classList.add('input-error-shake');
+          setTimeout(() => this.dom.inputAdminPassword.classList.remove('input-error-shake'), 600);
+          this.dom.inputAdminPassword.focus();
+          this.dom.inputAdminPassword.select();
+        }
+        return;
+      }
 
       try {
         this.dom.btnConfirmEnroll.disabled = true;
-        this.dom.btnConfirmEnroll.textContent = "Analizando...";
+        this.dom.btnConfirmEnroll.textContent = "Analizando biometría...";
 
         const nuevo = await this.engine.enrollCurrentFace(name);
         this.dom.modalPromptName.classList.remove('open');
         this.updateUserBadge();
-        this.showToast(`Rostro de ${nuevo.name} registrado`);
+        this.showToast(`Rostro de ${nuevo.name} registrado con éxito`);
         this.playBeep(600, 0.15);
 
       } catch (err) {
-        alert(err.message || "Error al enrolar");
+        this.showEnrollError(err.message || "No se detectó un rostro claro en cámara");
+        this.playBeep(200, 0.2);
       } finally {
         this.dom.btnConfirmEnroll.disabled = false;
         this.dom.btnConfirmEnroll.textContent = "Guardar Rostro";

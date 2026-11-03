@@ -723,3 +723,53 @@ html, body {
   }
 }
 
+
+/* ── PASSWORD INPUT & ERROR FEEDBACK (ADMIN 201106) ── */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.password-input-wrapper .cyber-input {
+  padding-right: 44px;
+}
+.btn-toggle-eye {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #71717a);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: var(--radius-sm, 6px);
+  transition: color 0.2s, transform 0.15s;
+}
+.btn-toggle-eye:hover {
+  color: var(--text-primary, #ffffff);
+  transform: scale(1.1);
+}
+.enroll-error-text {
+  color: var(--accent-rose, #f43f5e);
+  font-size: 11px;
+  font-family: var(--font-main, sans-serif);
+  font-weight: 500;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.input-error-shake {
+  animation: inputShake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  border-color: var(--accent-rose, #f43f5e) !important;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.35) !important;
+}
+@keyframes inputShake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}

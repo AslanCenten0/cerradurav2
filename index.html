@@ -497,6 +497,18 @@
         <label class="input-label" for="inputUserName">Nombre de la persona</label>
         <input type="text" id="inputUserName" class="cyber-input" placeholder="Ej: Matias, Profe, Mama..." maxlength="24" autocomplete="off" />
 
+        <label class="input-label" for="inputAdminPassword" style="margin-top: 14px;">Contraseña de Seguridad (Admin)</label>
+        <div class="password-input-wrapper">
+          <input type="password" id="inputAdminPassword" class="cyber-input" placeholder="PIN de 6 dígitos para autorizar..." maxlength="12" autocomplete="off" />
+          <button type="button" id="btnTogglePassword" class="btn-toggle-eye" title="Mostrar/Ocultar PIN" tabindex="-1">
+            <svg id="eyeIcon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <div id="enrollErrorMsg" class="enroll-error-text" style="display: none;"></div>
+
         <div class="modal-footer">
           <button id="btnCancelEnroll" class="btn-secondary" style="flex: initial;">Cancelar</button>
           <button id="btnConfirmEnroll" class="btn-primary" style="flex: initial;">Guardar Rostro</button>
