@@ -35,7 +35,7 @@
     <header class="nav-bar">
       <div class="brand">
         <div class="brand-dot"></div>
-        <div class="brand-name shiny-text">NEXUS <span class="brand-thin">ACCESS</span></div>
+        <div class="brand-name">Nexus <span class="brand-sub">Access</span></div>
       </div>
 
       <div class="header-actions">
@@ -98,9 +98,11 @@
 
       <!-- Viewport de la Cámara -->
       <div class="camera-wrapper">
-        <!-- HUD Telemetry Sci-Fi Overlays -->
-        <div class="hud-telemetry hud-tl"><span class="hud-dot"></span>SYS: ARMED // BIOMETRIC</div>
-        <div class="hud-telemetry hud-tr">AI ENGINE: v1.7.12 WebGL</div>
+        <!-- Apple Face ID Status Pill -->
+        <div class="apple-faceid-pill">
+          <span class="faceid-optic-dot"></span>
+          <span>Face ID</span>
+        </div>
         <video id="webcam" autoplay playsinline muted></video>
         <canvas id="overlayCanvas"></canvas>
 
@@ -278,6 +280,7 @@
          ══════════════════════════════════════════════════════════════════ -->
     <div id="modalUsers" class="modal-backdrop">
       <div class="modal-card">
+        <div class="sheet-grabber"></div>
         <div class="modal-header">
           <h3>Rostros Autorizados</h3>
           <button id="btnCloseModal" class="btn-close" title="Cerrar">&times;</button>
@@ -299,6 +302,7 @@
          ══════════════════════════════════════════════════════════════════ -->
     <div id="modalPromptName" class="modal-backdrop">
       <div class="modal-card">
+        <div class="sheet-grabber"></div>
         <div class="modal-header">
           <h3>Enrolar Nuevo Rostro</h3>
         </div>

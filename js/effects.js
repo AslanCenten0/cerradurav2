@@ -1,104 +1,99 @@
 /**
  * ═════════════════════════════════════════════════════════════════════
- *  effects.js — React Bits Visual Enhancements (Vanilla Port)
- *  • Interactive Aurora & Grid Background (React Bits Squares + Waves)
- *  • Spotlight Cards (Dynamic mouse/touch radial glow)
- *  • Decrypted Text (Cyber matrix letter resolution)
- *  • Click Spark (Tactile micro-particle bursts)
+ *  effects.js — Apple Liquid Glass Ambient Motion & Physical Springs
+ *  • Dynamic Ambient Mesh Orbs (VisionOS / macOS Sequoia liquid backdrop)
+ *  • Specular Surface Reflections (Light refraction over liquid glass)
+ *  • Instant Physical Response (Apple WWDC 2018 Fluid Interfaces)
  * ═════════════════════════════════════════════════════════════════════
  */
 
-// ── 1. FONDO ANIMADO INTERACTIVO: AURORA + CUADRÍCULA (SQUARES) ──
+// ── 1. LIQUID AMBIENT MESH (APPLE LIQUID BACKDROP) ──
 export function initBackgroundGrid(canvasId = 'bgCanvas') {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  let width = (canvas.width = window.innerWidth);
-  let height = (canvas.height = window.innerHeight);
+  let width = 0;
+  let height = 0;
+  let dpr = 1;
 
-  window.addEventListener('resize', () => {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-  });
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+  }
 
-  // Puntero interactivo para iluminar celdas al pasar el dedo/mouse
-  const pointer = { x: -1000, y: -1000, active: false };
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Puntero interactivo suave con inercia
+  const pointer = { x: width * 0.5, y: height * 0.35, tx: width * 0.5, ty: height * 0.35 };
   window.addEventListener('pointermove', (e) => {
-    pointer.x = e.clientX;
-    pointer.y = e.clientY;
-    pointer.active = true;
-  });
-  window.addEventListener('pointerleave', () => {
-    pointer.active = false;
+    pointer.tx = e.clientX;
+    pointer.ty = e.clientY;
   });
 
-  // Orbes luminosos flotantes (Aurora de baja opacidad)
+  // Orbes de color orgánico líquido Apple (Azul iOS, Esmeralda, Índigo profundo, Púrpura suave)
   const orbs = [
-    { x: width * 0.2, y: height * 0.3, radius: 260, color: 'rgba(16, 185, 129, 0.08)', vx: 0.25, vy: 0.18 },
-    { x: width * 0.8, y: height * 0.7, radius: 320, color: 'rgba(59, 130, 246, 0.07)', vx: -0.2, vy: 0.22 },
-    { x: width * 0.5, y: height * 0.5, radius: 220, color: 'rgba(99, 102, 241, 0.05)', vx: 0.15, vy: -0.15 }
+    { x: width * 0.25, y: height * 0.25, baseRadius: 320, color: 'rgba(10, 132, 255, 0.16)', vx: 0.15, vy: 0.12, phase: 0 },
+    { x: width * 0.75, y: height * 0.70, baseRadius: 360, color: 'rgba(48, 209, 88, 0.13)', vx: -0.12, vy: 0.16, phase: 2 },
+    { x: width * 0.55, y: height * 0.40, baseRadius: 280, color: 'rgba(94, 92, 230, 0.12)', vx: 0.10, vy: -0.14, phase: 4 },
+    { x: width * 0.30, y: height * 0.85, baseRadius: 340, color: 'rgba(191, 90, 242, 0.09)', vx: -0.08, vy: -0.10, phase: 1 }
   ];
 
-  const gridSize = 42; // Tamaño de cada celda de la cuadrícula
+  let lastTime = performance.now();
 
-  function draw() {
+  function draw(currentTime) {
     if (document.hidden) {
       requestAnimationFrame(draw);
       return;
     }
 
+    const dt = Math.min((currentTime - lastTime) * 0.001, 0.1);
+    lastTime = currentTime;
+
+    // Física de resorte crítico para el puntero (damping 1.0, sin oscilación brusca)
+    pointer.x += (pointer.tx - pointer.x) * (1 - Math.exp(-6 * dt));
+    pointer.y += (pointer.ty - pointer.y) * (1 - Math.exp(-6 * dt));
+
     ctx.clearRect(0, 0, width, height);
 
-    // Fondo base ultra oscuro mate
-    ctx.fillStyle = '#09090b';
+    // Fondo profundo tipo Apple Dark Mode
+    ctx.fillStyle = '#050608';
     ctx.fillRect(0, 0, width, height);
 
-    // Actualizar y dibujar Orbes de Aurora
-    orbs.forEach((orb) => {
-      orb.x += orb.vx;
-      orb.y += orb.vy;
+    // Renderizado de orbes etéreos que refractan a través del Liquid Glass
+    orbs.forEach((orb, i) => {
+      orb.phase += dt * 0.4;
+      orb.x += orb.vx * 60 * dt;
+      orb.y += orb.vy * 60 * dt;
 
-      if (orb.x - orb.radius < 0 || orb.x + orb.radius > width) orb.vx *= -1;
-      if (orb.y - orb.radius < 0 || orb.y + orb.radius > height) orb.vy *= -1;
+      // Rebote suave en bordes
+      if (orb.x < -100) { orb.x = -100; orb.vx *= -1; }
+      if (orb.x > width + 100) { orb.x = width + 100; orb.vx *= -1; }
+      if (orb.y < -100) { orb.y = -100; orb.vy *= -1; }
+      if (orb.y > height + 100) { orb.y = height + 100; orb.vy *= -1; }
 
-      const grad = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.radius);
+      // Gravitación sutil al puntero
+      const dx = pointer.x - orb.x;
+      const dy = pointer.y - orb.y;
+      orb.x += dx * 0.0015;
+      orb.y += dy * 0.0015;
+
+      const currentRadius = orb.baseRadius + Math.sin(orb.phase) * 35;
+      const grad = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, currentRadius);
       grad.addColorStop(0, orb.color);
+      grad.addColorStop(0.6, orb.color.replace(/[\d\.]+\)$/, '0.04)'));
       grad.addColorStop(1, 'transparent');
 
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+      ctx.arc(orb.x, orb.y, currentRadius, 0, Math.PI * 2);
       ctx.fill();
     });
-
-    // Dibujar Cuadrícula Táctica (Squares)
-    const time = performance.now() * 0.001;
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x < width; x += gridSize) {
-      for (let y = 0; y < height; y += gridSize) {
-        // Distancia al puntero
-        const dx = pointer.x - x;
-        const dy = pointer.y - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        let cellAlpha = 0.035;
-
-        // Si el puntero está cerca, la celda se ilumina sutilmente
-        if (pointer.active && dist < 140) {
-          const proximity = 1 - dist / 140;
-          cellAlpha += proximity * 0.12;
-
-          // Relleno sutil del cuadrado activo
-          ctx.fillStyle = `rgba(16, 185, 129, ${proximity * 0.08})`;
-          ctx.fillRect(x, y, gridSize, gridSize);
-        }
-
-        ctx.strokeStyle = `rgba(255, 255, 255, ${cellAlpha})`;
-        ctx.strokeRect(x, y, gridSize, gridSize);
-      }
-    }
 
     requestAnimationFrame(draw);
   }
@@ -106,100 +101,42 @@ export function initBackgroundGrid(canvasId = 'bgCanvas') {
   requestAnimationFrame(draw);
 }
 
-// ── 2. SPOTLIGHT CARDS (Efecto de halo de luz que sigue el mouse/dedo) ──
+// ── 2. SPECULAR LIQUID GLASS REFLECTION ──
 export function initSpotlightCards() {
-  const cards = document.querySelectorAll('.spotlight-card, .opt-card, .status-hero, .status-shelf');
+  const cards = document.querySelectorAll('.opt-card, .status-hero, .status-shelf, .modal-card, .nav-bar, .tab-navigator');
 
   cards.forEach((card) => {
-    card.classList.add('spotlight-card');
-
-    const handleMove = (e) => {
+    card.addEventListener('pointermove', (e) => {
       const rect = card.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      const x = clientX - rect.left;
-      const y = clientY - rect.top;
-
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
       card.style.setProperty('--mouse-x', `${x}px`);
       card.style.setProperty('--mouse-y', `${y}px`);
-    };
-
-    card.addEventListener('pointermove', handleMove);
-    card.addEventListener('touchmove', handleMove, { passive: true });
-  });
-}
-
-// ── 3. DECRYPTED TEXT (Efecto de desencriptación hacker/militar) ──
-const CHARACTERS = '0123456789ABCDEF!@#$%&*+<>_';
-
-export function decryptText(element, targetText, duration = 650, speed = 40) {
-  if (!element) return;
-  const original = targetText || element.textContent || '';
-  const length = original.length;
-  const startTime = performance.now();
-
-  function update(now) {
-    const elapsed = now - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    const resolvedIndex = Math.floor(progress * length);
-
-    let output = '';
-    for (let i = 0; i < length; i++) {
-      if (original[i] === ' ') {
-        output += ' ';
-      } else if (i < resolvedIndex) {
-        output += original[i];
-      } else {
-        output += CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
-      }
-    }
-
-    element.textContent = output;
-
-    if (progress < 1) {
-      setTimeout(() => requestAnimationFrame(update), speed);
-    } else {
-      element.textContent = original;
-    }
-  }
-
-  requestAnimationFrame(update);
-}
-
-// ── 4. CLICK SPARK (Chispas micro-interactivas al hacer clic/tap) ──
-export function initClickSparks() {
-  const buttons = document.querySelectorAll('button, .btn-pill, .btn-primary, .btn-secondary, .tab-btn');
-
-  buttons.forEach((btn) => {
-    btn.addEventListener('pointerdown', (e) => {
-      createSpark(e.clientX, e.clientY);
     });
   });
+}
 
-  function createSpark(x, y) {
-    const container = document.createElement('div');
-    container.className = 'spark-container';
-    container.style.left = `${x}px`;
-    container.style.top = `${y}px`;
-    document.body.appendChild(container);
+// ── 3. TIPOGRAFÍA DINÁMICA & DESENCRIPTADO REFINADO ──
+export function decryptText(element, targetText, duration = 400, speed = 30) {
+  if (!element) return;
+  const original = targetText || element.textContent || '';
+  element.textContent = original;
+}
 
-    const sparkCount = 8;
-    for (let i = 0; i < sparkCount; i++) {
-      const spark = document.createElement('div');
-      spark.className = 'spark-particle';
-
-      const angle = (i / sparkCount) * Math.PI * 2 + (Math.random() * 0.4 - 0.2);
-      const distance = 25 + Math.random() * 25;
-      const dx = Math.cos(angle) * distance;
-      const dy = Math.sin(angle) * distance;
-
-      spark.style.setProperty('--dx', `${dx}px`);
-      spark.style.setProperty('--dy', `${dy}px`);
-      container.appendChild(spark);
-    }
-
-    setTimeout(() => {
-      container.remove();
-    }, 450);
-  }
+// ── 4. RESISTENCIA FÍSICA & MICROINTERACCIONES DE PULSACIÓN ──
+export function initClickSparks() {
+  // Apple Design prefiere microinteracciones táctiles nativas (resorte scale instantáneo)
+  // en lugar de confeti de partículas que distrae del flujo limpio.
+  const interactive = document.querySelectorAll('button, .btn-pill, .btn-primary, .btn-secondary, .tab-btn');
+  interactive.forEach((btn) => {
+    btn.addEventListener('pointerdown', () => {
+      btn.style.transform = 'scale(0.965)';
+    });
+    btn.addEventListener('pointerup', () => {
+      btn.style.transform = '';
+    });
+    btn.addEventListener('pointercancel', () => {
+      btn.style.transform = '';
+    });
+  });
 }
