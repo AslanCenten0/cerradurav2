@@ -1,21 +1,21 @@
 {
-  "name": "Nexus Access - Biometría Facial",
+  "name": "Nexus Access",
   "short_name": "NexusAccess",
-  "description": "Control de Acceso Biométrico Facial con Web Bluetooth y Firebase",
-  "start_url": "/",
+  "description": "Control de Acceso Biométrico Facial",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "background_color": "#F5F5F7",
+  "theme_color": "#F5F5F7",
   "icons": [
     {
-      "src": "/icons/icon.svg",
+      "src": "icon.svg",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon.svg",
+      "src": "icons/icon.svg",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

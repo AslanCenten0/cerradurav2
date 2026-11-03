@@ -15,7 +15,7 @@ window.decryptText = decryptText;
 // Cooldown de 6 segundos tras apertura exitosa
 const COOLDOWN_DURATION = 6000;
 
-class NexusApp {
+export class NexusApp {
   constructor() {
     this.bt = new BluetoothController();
     this.engine = null;
@@ -104,12 +104,18 @@ class NexusApp {
 
   async tryStartCamera() {
     try {
-      this.dom.loaderMsg.textContent = "Conectando cámara...";
+      if (this.dom.loaderMsg) this.dom.loaderMsg.textContent = "Conectando cámara...";
+      console.log("📷 Iniciando tryStartCamera...");
       await this.engine.startCamera();
 
       // Ocultar splash loader suavemente
-      this.dom.loader.classList.add('hidden');
-      this.showToast("Cámara y biometría activas");
+      if (this.dom.loader) {
+        this.dom.loader.classList.add('hidden');
+        setTimeout(() => {
+          if (this.dom.loader) this.dom.loader.style.display = 'none';
+        }, 300);
+      }
+      this.showToast("Cámara activa");
 
       // Configurar escucha de detección
       this.engine.onFaceDetected = (result) => this.handleFaceDetection(result);
@@ -119,13 +125,15 @@ class NexusApp {
         this.dom.btnEnableCamera.style.display = 'none';
       }
     } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
-      this.dom.loaderMsg.textContent = "Acceso a cámara requerido para la biometría.";
+      console.error("❌ Error al iniciar la cámara:", err);
+      if (this.dom.loaderMsg) {
+        this.dom.loaderMsg.textContent = "Permiso de cámara requerido.";
+      }
       
       if (this.dom.btnEnableCamera) {
         this.dom.btnEnableCamera.style.display = 'inline-flex';
         this.dom.btnEnableCamera.onclick = async () => {
-          this.dom.loaderMsg.textContent = "Pidiendo permisos de cámara...";
+          if (this.dom.loaderMsg) this.dom.loaderMsg.textContent = "Solicitando permisos...";
           await this.tryStartCamera();
         };
       }
@@ -500,8 +508,16 @@ class NexusApp {
   }
 }
 
-// Inicializar la aplicación cuando cargue la página
-window.addEventListener('DOMContentLoaded', () => {
+function boot() {
+  if (window.__nexusAppLoaded) return;
+  window.__nexusAppLoaded = true;
   const app = new NexusApp();
   app.init();
-});
+  window.nexusApp = app;
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}

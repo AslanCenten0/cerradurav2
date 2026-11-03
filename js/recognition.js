@@ -64,6 +64,7 @@ export class FaceRecognitionEngine {
         throw new Error("Este dispositivo no soporta acceso a la cámara o requiere HTTPS.");
       }
 
+      console.log("📷 Solicitando acceso a cámara...");
       let stream = null;
       // 1. Intentar con cámara frontal optimizada
       try {
@@ -86,32 +87,34 @@ export class FaceRecognitionEngine {
 
       this.video.srcObject = stream;
       this.video.setAttribute('playsinline', '');
-      this.video.setAttribute('muted', '');
+      this.video.setAttribute('webkit-playsinline', 'true');
       this.video.muted = true;
 
-      return new Promise((resolve) => {
-        let resolved = false;
-        const doResolve = () => {
-          if (resolved) return;
-          resolved = true;
-          this.adjustCanvasDimensions();
-          window.addEventListener('resize', () => this.adjustCanvasDimensions());
-          this.video.play().catch(e => console.warn("Video play:", e));
-          resolve(true);
-        };
+      try {
+        await this.video.play();
+      } catch (playErr) {
+        console.warn("video.play() diferido o esperando interacción:", playErr);
+      }
 
-        if (this.video.readyState >= 2) {
-          doResolve();
+      await new Promise((resolve) => {
+        if (this.video.videoWidth > 0) {
+          resolve();
         } else {
-          this.video.onloadeddata = doResolve;
-          this.video.onloadedmetadata = doResolve;
+          const onMeta = () => {
+            this.video.removeEventListener('loadedmetadata', onMeta);
+            resolve();
+          };
+          this.video.addEventListener('loadedmetadata', onMeta);
+          setTimeout(resolve, 800);
         }
-
-        // Timeout de seguridad de 2.5s para no bloquear la aplicación
-        setTimeout(doResolve, 2500);
       });
+
+      this.adjustCanvasDimensions();
+      window.addEventListener('resize', () => this.adjustCanvasDimensions());
+      console.log("✅ Cámara inicializada correctamente:", this.video.videoWidth, "x", this.video.videoHeight);
+      return true;
     } catch (err) {
-      console.error("Error accediendo a la cámara:", err);
+      console.error("❌ Error accediendo a la cámara:", err);
       throw err;
     }
   }
@@ -135,7 +138,7 @@ export class FaceRecognitionEngine {
     const detectLoop = async () => {
       if (!this.isRunning) return;
 
-      if (this.video.readyState === 4 && this.isModelLoaded) {
+      if (this.video.readyState >= 2 && this.isModelLoaded) {
         await this.detectAndRecognize();
       }
 
