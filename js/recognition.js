@@ -216,48 +216,45 @@ export class FaceRecognitionEngine {
   drawMinimalHUD(box, match) {
     const { x, y, width, height } = box;
     const isAuth = !!match;
-    const color = isAuth ? '#10b981' : '#f43f5e';
+    const color = isAuth ? '#34C759' : '#FFFFFF';
 
     this.ctx.save();
     this.ctx.lineWidth = 2;
     this.ctx.strokeStyle = color;
+    this.ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    this.ctx.shadowBlur = 4;
 
-    // Solo esquinas tipo retícula táctica
-    const cornerSize = Math.min(width, height) * 0.2;
+    const cornerSize = Math.min(width, height) * 0.18;
     
-    // Esquina superior izquierda
     this.ctx.beginPath();
     this.ctx.moveTo(x, y + cornerSize);
     this.ctx.lineTo(x, y);
     this.ctx.lineTo(x + cornerSize, y);
     this.ctx.stroke();
 
-    // Esquina superior derecha
     this.ctx.beginPath();
     this.ctx.moveTo(x + width - cornerSize, y);
     this.ctx.lineTo(x + width, y);
     this.ctx.lineTo(x + width, y + cornerSize);
     this.ctx.stroke();
 
-    // Esquina inferior izquierda
     this.ctx.beginPath();
     this.ctx.moveTo(x, y + height - cornerSize);
     this.ctx.lineTo(x, y + height);
     this.ctx.lineTo(x + cornerSize, y + height);
     this.ctx.stroke();
 
-    // Esquina inferior derecha
     this.ctx.beginPath();
     this.ctx.moveTo(x + width - cornerSize, y + height);
     this.ctx.lineTo(x + width, y + height);
     this.ctx.lineTo(x + width, y + height - cornerSize);
     this.ctx.stroke();
 
-    // Etiqueta con tipografía limpia
-    const label = isAuth ? `${match.name.toUpperCase()} (${match.confidence}%)` : 'DESCONOCIDO';
-    this.ctx.font = '600 12px "JetBrains Mono", monospace';
-    this.ctx.fillStyle = color;
-    this.ctx.fillText(label, x + 4, y - 8);
+    if (isAuth) {
+      this.ctx.font = '500 12px -apple-system, sans-serif';
+      this.ctx.fillStyle = color;
+      this.ctx.fillText(${match.name}, x + 4, y - 8);
+    }
 
     this.ctx.restore();
   }
