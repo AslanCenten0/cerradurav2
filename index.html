@@ -7,13 +7,13 @@
   <title>Nexus Access</title>
 
   <!-- PWA Manifest & Icons -->
-  <link rel="manifest" href="manifest.webmanifest?v=10" />
+  <link rel="manifest" href="manifest.webmanifest?v=11" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 
   <!-- Apple System Font & Estilos -->
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
 
   <!-- Biblioteca Face-API (TensorFlow.js WebGL) -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
@@ -98,6 +98,15 @@
           <span id="toastMessage">Listo</span>
         </div>
 
+        <!-- Botón Liquid Glass: Cerrar Servo (Abajo a la derecha de la cámara) -->
+        <button id="btnQuickLockCamera" class="btn-camera-lock" title="Cerrar Cerradura">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>Cerrar</span>
+        </button>
+
         <!-- Pantalla de Carga Frosted -->
         <div id="loaderSplash" class="loader-splash">
           <div class="spinner"></div>
@@ -178,7 +187,7 @@
               </svg>
               <span>Abrir</span>
             </button>
-            <button class="btn-action-secondary" id="btnAccionCerrar" onclick="ejecutarCierreForzado()">
+            <button class="btn-action-secondary" id="btnAccionCerrar" onclick="ejecutarCierreForzado()" title="Bloquear cerradura">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
@@ -227,7 +236,7 @@
               <span class="log-tag">OK</span>
             </li>
             <li class="log-item">
-              <span>Tarjeta RFID</span>
+              <span>Tarjeta RFID (15s)</span>
               <span class="log-tag">OK</span>
             </li>
           </ul>
@@ -427,17 +436,11 @@
       }
     }
 
+    // Cierre manual inmediato a petición del usuario
     function ejecutarCierreForzado() {
-      const texto = document.getElementById('panelEstadoTexto');
-      const badge = document.getElementById('panelEstadoBadge');
-      const dot = document.getElementById('panelPulseDot');
-
-      if (texto) texto.textContent = "CERRADO";
-      if (badge) {
-        badge.textContent = "BLOQUEADA";
-        badge.className = "opt-badge badge-neutral";
+      if (window._firebaseCerrarRemoto) {
+        window._firebaseCerrarRemoto("Panel Web");
       }
-      if (dot) dot.style.backgroundColor = "#8E8E93";
     }
 
     function activarRfidLibre() {
@@ -498,6 +501,8 @@
           const texto = document.getElementById('panelEstadoTexto');
           const badge = document.getElementById('panelEstadoBadge');
           const dot = document.getElementById('panelPulseDot');
+          const statusPulse = document.getElementById('statusPulse');
+          const statusText = document.getElementById('statusText');
           const ultimoMetodo = document.getElementById('panelMetodoUltimo');
           const btnAbrir = document.getElementById('btnAccionAbrir');
 
@@ -512,6 +517,8 @@
               badge.textContent = "DESBLOQUEADA";
             }
             if (dot) dot.style.backgroundColor = "#34C759";
+            if (statusPulse) statusPulse.className = "pulse-ring active";
+            if (statusText) statusText.textContent = "Cerradura abierta";
             if (btnAbrir) btnAbrir.disabled = true;
             agregarLog("Apertura", data.metodo || "ESP32");
           } else {
@@ -521,6 +528,8 @@
               badge.textContent = "BLOQUEADA";
             }
             if (dot) dot.style.backgroundColor = "#8E8E93";
+            if (statusPulse) statusPulse.className = "pulse-ring";
+            if (statusText) statusText.textContent = "Esperando rostro...";
             if (btnAbrir) btnAbrir.disabled = false;
           }
         });
@@ -529,6 +538,7 @@
       console.warn("Firebase no inicializado:", err);
     }
 
+    // Orden de apertura (el servo queda abierto hasta que el usuario decida cerrarlo manualmente)
     window._firebaseAbrirRemoto = async function(metodo = 'Panel Web') {
       const btnAbrir = document.getElementById('btnAccionAbrir');
       if (btnAbrir) btnAbrir.disabled = true;
@@ -547,17 +557,59 @@
       if (db) {
         try {
           agregarLog("Orden", metodo);
+          // Resetear comando_cerrar y activar comando_abrir
+          await set(ref(db, 'cerradura/comando_cerrar'), false);
           await set(ref(db, 'cerradura/comando_abrir'), true);
         } catch(e) {
-          console.error("Error al escribir en Firebase:", e);
+          console.error("Error al escribir apertura en Firebase:", e);
           if (btnAbrir) btnAbrir.disabled = false;
+        }
+      }
+    };
+
+    // Orden de cierre manual (bloquea el servomotor a 0 grados en el ESP32)
+    window._firebaseCerrarRemoto = async function(metodo = 'Boton Cerrar') {
+      const btnAbrir = document.getElementById('btnAccionAbrir');
+      const btnCerrar = document.getElementById('btnAccionCerrar');
+      const btnCerrarCam = document.getElementById('btnQuickLockCamera');
+      if (btnCerrar) btnCerrar.disabled = true;
+      if (btnCerrarCam) btnCerrarCam.disabled = true;
+
+      const texto = document.getElementById('panelEstadoTexto');
+      const badge = document.getElementById('panelEstadoBadge');
+      const dot = document.getElementById('panelPulseDot');
+      const statusPulse = document.getElementById('statusPulse');
+      const statusText = document.getElementById('statusText');
+
+      if (texto) texto.textContent = "CERRADO";
+      if (badge) {
+        badge.className = "opt-badge badge-neutral";
+        badge.textContent = "BLOQUEADA";
+      }
+      if (dot) dot.style.backgroundColor = "#8E8E93";
+      if (statusPulse) statusPulse.className = "pulse-ring";
+      if (statusText) statusText.textContent = "Cerradura bloqueada";
+
+      if (db) {
+        try {
+          agregarLog("Cierre", metodo);
+          await set(ref(db, 'cerradura/comando_abrir'), false);
+          await set(ref(db, 'cerradura/comando_cerrar'), true);
+        } catch(e) {
+          console.error("Error al escribir cierre en Firebase:", e);
+        } finally {
+          setTimeout(() => {
+            if (btnAbrir) btnAbrir.disabled = false;
+            if (btnCerrar) btnCerrar.disabled = false;
+            if (btnCerrarCam) btnCerrarCam.disabled = false;
+          }, 800);
         }
       }
     };
   </script>
 
   <!-- Orquestador Principal ES6 con Cache Busting -->
-  <script type="module" src="js/app.js?v=10"></script>
+  <script type="module" src="js/app.js?v=11"></script>
 
 </body>
 </html>

@@ -11,7 +11,7 @@ import { initBackgroundGrid, initSpotlightCards, initClickSparks, decryptText } 
 // Exponer decryptText para que el panel de control pueda usarlo
 window.decryptText = decryptText;
 
-// Cooldown de 6 segundos tras apertura exitosa
+// Cooldown tras apertura exitosa
 const COOLDOWN_DURATION = 6000;
 
 export class NexusApp {
@@ -42,6 +42,7 @@ export class NexusApp {
       badgeUserCount: document.getElementById('badgeUserCount'),
       btnManualUnlock: document.getElementById('btnManualUnlock'),
       btnRegisterFace: document.getElementById('btnRegisterFace'),
+      btnQuickLockCamera: document.getElementById('btnQuickLockCamera'),
       
       // Modal 1: Usuarios
       modalUsers: document.getElementById('modalUsers'),
@@ -177,7 +178,7 @@ export class NexusApp {
    */
   registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=10')
+      navigator.serviceWorker.register('sw.js?v=11')
         .then(reg => {
           console.log("✅ PWA Service Worker registrado con éxito:", reg.scope);
           reg.update().catch(() => {});
@@ -193,7 +194,16 @@ export class NexusApp {
     const ahora = Date.now();
     const reticle = this.dom.scanReticle;
 
-    // Si estamos en período de enfriamiento (cooldown tras apertura)
+    // Si la cerradura ya está abierta en Firebase, no re-disparar apertura innecesariamente
+    const panelTexto = document.getElementById('panelEstadoTexto');
+    if (panelTexto && panelTexto.textContent === "ABIERTO") {
+      if (reticle) reticle.className = "scan-reticle authorized";
+      if (this.dom.statusText) this.dom.statusText.textContent = "Cerradura abierta";
+      if (this.dom.statusPulse) this.dom.statusPulse.className = "pulse-ring active";
+      return;
+    }
+
+    // Período de enfriamiento breve
     if (ahora < this.cooldownUntil) {
       const restantes = Math.ceil((this.cooldownUntil - ahora) / 1000);
       if (this.dom.cooldownTimer) this.dom.cooldownTimer.textContent = `ESPERA: ${restantes}s`;
@@ -280,6 +290,19 @@ export class NexusApp {
       this.initAudio();
       this.promptUnlockAuth(metodo);
     };
+
+    // ── BOTÓN CERRAR EN LA CÁMARA (Abajo a la derecha) ──
+    if (this.dom.btnQuickLockCamera) {
+      this.dom.btnQuickLockCamera.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.initAudio();
+        if (window._firebaseCerrarRemoto) {
+          window._firebaseCerrarRemoto("Cámara Web");
+        }
+        this.playBeep(440, 0.12);
+        this.showToast("🔒 Cerradura bloqueada");
+      });
+    }
 
     // Escuchar el evento de instalación de PWA (Chrome, Edge, Android)
     window.addEventListener('beforeinstallprompt', (e) => {

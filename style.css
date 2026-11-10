@@ -1003,3 +1003,41 @@ html, body {
   display: inline-block;
   font-size: 13px;
 }
+
+/* Botón Flotante Inferior Derecho en la Cámara: Cerrar (Liquid Glass) */
+.btn-camera-lock {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 15px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-full);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 1);
+  color: var(--text-primary);
+  font-family: var(--font-system);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: var(--spring-release);
+}
+.btn-camera-lock:hover {
+  background: #FFFFFF;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+.btn-camera-lock:active {
+  transform: scale(0.94);
+  transition: var(--spring-press);
+}
+.btn-camera-lock svg {
+  color: var(--status-red);
+  stroke-width: 2.25;
+}

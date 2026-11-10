@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nexus-access-v10';
+const CACHE_NAME = 'nexus-access-v11';
 const ASSETS_TO_CACHE = [
   './',
   'index.html',
@@ -15,7 +15,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[PWA SW] Pre-caching static assets v10');
+      console.log('[PWA SW] Pre-caching static assets v11');
       return cache.addAll(ASSETS_TO_CACHE).catch(e => console.warn('Pre-cache error:', e));
     })
   );
