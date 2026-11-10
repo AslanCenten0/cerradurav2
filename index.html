@@ -7,13 +7,13 @@
   <title>Nexus Access</title>
 
   <!-- PWA Manifest & Icons -->
-  <link rel="manifest" href="manifest.webmanifest?v=9" />
+  <link rel="manifest" href="manifest.webmanifest?v=10" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 
   <!-- Apple System Font & Estilos -->
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
 
   <!-- Biblioteca Face-API (TensorFlow.js WebGL) -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
@@ -122,7 +122,7 @@
 
       <!-- Controles Compactos -->
       <div class="control-deck">
-        <button id="btnManualUnlock" class="btn-secondary">
+        <button id="btnManualUnlock" class="btn-secondary" title="Requiere PIN de seguridad">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
@@ -172,7 +172,7 @@
             <span class="opt-badge badge-neutral" id="panelMetodoUltimo">REMOTO</span>
           </div>
           <div class="grid-2">
-            <button class="btn-action-primary" id="btnAccionAbrir" onclick="ejecutarAperturaRemota()">
+            <button class="btn-action-primary" id="btnAccionAbrir" onclick="ejecutarAperturaRemota()" title="Requiere PIN de seguridad">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
                 <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"></path>
               </svg>
@@ -345,6 +345,42 @@
       </div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════════════
+         MODAL 4: PIN DE SEGURIDAD PARA ABRIR CERRADURA (201106)
+         ══════════════════════════════════════════════════════════════════ -->
+    <div id="modalAuthUnlock" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="sheet-grabber"></div>
+        <div class="modal-header">
+          <h3>Confirmar Apertura</h3>
+          <button id="btnCloseAuthUnlock" class="btn-close" title="Cerrar">&times;</button>
+        </div>
+        
+        <p class="install-sheet-desc" style="margin-bottom: 2px;">
+          Ingresa la contraseña de seguridad para accionar la apertura de la cerradura.
+        </p>
+
+        <div class="form-group">
+          <label class="input-label" for="inputUnlockPassword">PIN de Seguridad</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="inputUnlockPassword" class="cyber-input" placeholder="Introduce el PIN" maxlength="12" autocomplete="off" />
+            <button type="button" id="btnToggleUnlockPassword" class="btn-toggle-eye" title="Mostrar/Ocultar PIN" tabindex="-1">
+              <svg id="eyeUnlockIcon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+          <div id="unlockErrorMsg" class="enroll-error-text" style="display: none;"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnCancelAuthUnlock" class="btn-secondary">Cancelar</button>
+          <button id="btnConfirmAuthUnlock" class="btn-primary">Abrir</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Switcher de Pestañas & Control Lógico -->
@@ -382,29 +418,13 @@
       }
     }
 
+    // Cualquier botón de apertura requiere PIN de seguridad
     function ejecutarAperturaRemota() {
-      if (window._firebaseAbrirRemoto) {
+      if (window.solicitarPinApertura) {
+        window.solicitarPinApertura("Panel Web");
+      } else if (window._firebaseAbrirRemoto) {
         window._firebaseAbrirRemoto("Panel Web");
-        return;
       }
-
-      const texto = document.getElementById('panelEstadoTexto');
-      const badge = document.getElementById('panelEstadoBadge');
-      const dot = document.getElementById('panelPulseDot');
-      const btnAbrir = document.getElementById('btnAccionAbrir');
-
-      texto.textContent = "ABIERTO";
-      badge.textContent = "DESBLOQUEADA";
-      badge.className = "opt-badge badge-active";
-      dot.style.backgroundColor = "#34C759";
-      if (btnAbrir) btnAbrir.disabled = true;
-
-      agregarLog("Apertura", "Remota");
-
-      setTimeout(() => {
-        ejecutarCierreForzado();
-        if (btnAbrir) btnAbrir.disabled = false;
-      }, 5000);
     }
 
     function ejecutarCierreForzado() {
@@ -412,10 +432,12 @@
       const badge = document.getElementById('panelEstadoBadge');
       const dot = document.getElementById('panelPulseDot');
 
-      texto.textContent = "CERRADO";
-      badge.textContent = "BLOQUEADA";
-      badge.className = "opt-badge badge-neutral";
-      dot.style.backgroundColor = "#8E8E93";
+      if (texto) texto.textContent = "CERRADO";
+      if (badge) {
+        badge.textContent = "BLOQUEADA";
+        badge.className = "opt-badge badge-neutral";
+      }
+      if (dot) dot.style.backgroundColor = "#8E8E93";
     }
 
     function activarRfidLibre() {
@@ -484,17 +506,21 @@
           }
 
           if (data.estado === "ABIERTO") {
-            texto.textContent = "ABIERTO";
-            badge.className = "opt-badge badge-active";
-            badge.textContent = "DESBLOQUEADA";
-            dot.style.backgroundColor = "#34C759";
+            if (texto) texto.textContent = "ABIERTO";
+            if (badge) {
+              badge.className = "opt-badge badge-active";
+              badge.textContent = "DESBLOQUEADA";
+            }
+            if (dot) dot.style.backgroundColor = "#34C759";
             if (btnAbrir) btnAbrir.disabled = true;
             agregarLog("Apertura", data.metodo || "ESP32");
           } else {
-            texto.textContent = "CERRADO";
-            badge.className = "opt-badge badge-neutral";
-            badge.textContent = "BLOQUEADA";
-            dot.style.backgroundColor = "#8E8E93";
+            if (texto) texto.textContent = "CERRADO";
+            if (badge) {
+              badge.className = "opt-badge badge-neutral";
+              badge.textContent = "BLOQUEADA";
+            }
+            if (dot) dot.style.backgroundColor = "#8E8E93";
             if (btnAbrir) btnAbrir.disabled = false;
           }
         });
@@ -506,6 +532,17 @@
     window._firebaseAbrirRemoto = async function(metodo = 'Panel Web') {
       const btnAbrir = document.getElementById('btnAccionAbrir');
       if (btnAbrir) btnAbrir.disabled = true;
+
+      const texto = document.getElementById('panelEstadoTexto');
+      const badge = document.getElementById('panelEstadoBadge');
+      const dot = document.getElementById('panelPulseDot');
+
+      if (texto) texto.textContent = "ABIERTO";
+      if (badge) {
+        badge.className = "opt-badge badge-active";
+        badge.textContent = "DESBLOQUEADA";
+      }
+      if (dot) dot.style.backgroundColor = "#34C759";
 
       if (db) {
         try {
@@ -520,7 +557,7 @@
   </script>
 
   <!-- Orquestador Principal ES6 con Cache Busting -->
-  <script type="module" src="js/app.js?v=9"></script>
+  <script type="module" src="js/app.js?v=10"></script>
 
 </body>
 </html>

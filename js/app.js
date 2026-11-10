@@ -18,6 +18,7 @@ export class NexusApp {
   constructor() {
     this.engine = null;
     this.deferredPrompt = null;
+    this.pendingUnlockMethod = null;
 
     this.cooldownUntil = 0;
     this.audioContext = null;
@@ -42,12 +43,13 @@ export class NexusApp {
       btnManualUnlock: document.getElementById('btnManualUnlock'),
       btnRegisterFace: document.getElementById('btnRegisterFace'),
       
-      // Modales
+      // Modal 1: Usuarios
       modalUsers: document.getElementById('modalUsers'),
       btnCloseModal: document.getElementById('btnCloseModal'),
       userList: document.getElementById('userList'),
       btnClearAllUsers: document.getElementById('btnClearAllUsers'),
       
+      // Modal 2: Registrar Rostro
       modalPromptName: document.getElementById('modalPromptName'),
       inputUserName: document.getElementById('inputUserName'),
       btnCancelEnroll: document.getElementById('btnCancelEnroll'),
@@ -56,7 +58,7 @@ export class NexusApp {
       btnTogglePassword: document.getElementById('btnTogglePassword'),
       enrollErrorMsg: document.getElementById('enrollErrorMsg'),
 
-      // PWA / Descargar
+      // Modal 3: PWA / Descargar
       btnInstallApp: document.getElementById('btnInstallApp'),
       labelInstallApp: document.getElementById('labelInstallApp'),
       modalInstall: document.getElementById('modalInstall'),
@@ -64,6 +66,15 @@ export class NexusApp {
       btnCloseInstallSheet: document.getElementById('btnCloseInstallSheet'),
       installNativeSection: document.getElementById('installNativeSection'),
       btnTriggerNativeInstall: document.getElementById('btnTriggerNativeInstall'),
+
+      // Modal 4: PIN de Seguridad para Apertura
+      modalAuthUnlock: document.getElementById('modalAuthUnlock'),
+      inputUnlockPassword: document.getElementById('inputUnlockPassword'),
+      btnToggleUnlockPassword: document.getElementById('btnToggleUnlockPassword'),
+      unlockErrorMsg: document.getElementById('unlockErrorMsg'),
+      btnCancelAuthUnlock: document.getElementById('btnCancelAuthUnlock'),
+      btnConfirmAuthUnlock: document.getElementById('btnConfirmAuthUnlock'),
+      btnCloseAuthUnlock: document.getElementById('btnCloseAuthUnlock'),
 
       btnEnableCamera: document.getElementById('btnEnableCamera'),
     };
@@ -166,10 +177,9 @@ export class NexusApp {
    */
   registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=9')
+      navigator.serviceWorker.register('sw.js?v=10')
         .then(reg => {
           console.log("✅ PWA Service Worker registrado con éxito:", reg.scope);
-          // Forzar chequeo de actualización inmediata
           reg.update().catch(() => {});
         })
         .catch(err => console.log("PWA SW no registrado:", err));
@@ -207,7 +217,7 @@ export class NexusApp {
       if (this.dom.statusText) this.dom.statusText.textContent = `AUTORIZADO: ${match.name.toUpperCase()} (${match.confidence}%)`;
       if (this.dom.statusPulse) this.dom.statusPulse.className = "pulse-ring active";
 
-      // Disparar Apertura
+      // Disparar Apertura Biométrica
       this.triggerUnlock(match.name);
 
     } else {
@@ -219,6 +229,34 @@ export class NexusApp {
   }
 
   /**
+   * Modal de autorización con contraseña para abrir la cerradura
+   */
+  promptUnlockAuth(methodName = "Manual") {
+    this.pendingUnlockMethod = methodName;
+    if (this.dom.inputUnlockPassword) {
+      this.dom.inputUnlockPassword.value = '';
+      this.dom.inputUnlockPassword.type = 'password';
+    }
+    if (this.dom.unlockErrorMsg) {
+      this.dom.unlockErrorMsg.textContent = '';
+      this.dom.unlockErrorMsg.style.display = 'none';
+    }
+    if (this.dom.modalAuthUnlock) {
+      this.dom.modalAuthUnlock.classList.add('open');
+      setTimeout(() => {
+        if (this.dom.inputUnlockPassword) this.dom.inputUnlockPassword.focus();
+      }, 150);
+    }
+  }
+
+  closeUnlockAuth() {
+    if (this.dom.modalAuthUnlock) {
+      this.dom.modalAuthUnlock.classList.remove('open');
+    }
+    this.pendingUnlockMethod = null;
+  }
+
+  /**
    * Ejecuta la orden de apertura a través de Firebase Realtime Database
    */
   async triggerUnlock(userName) {
@@ -227,7 +265,7 @@ export class NexusApp {
     this.showToast(`🔓 Acceso concedido a ${userName}`);
 
     if (window._firebaseAbrirRemoto) {
-      await window._firebaseAbrirRemoto("FACIAL: " + userName);
+      await window._firebaseAbrirRemoto("ORDEN: " + userName);
     } else {
       console.log(`[LOCAL] Apertura concedida para: ${userName}`);
     }
@@ -237,6 +275,12 @@ export class NexusApp {
    * Enlaza botones y modales
    */
   bindUIEvents() {
+    // Exponer función global para que cualquier botón de la interfaz requiera contraseña
+    window.solicitarPinApertura = (metodo = "Panel Web") => {
+      this.initAudio();
+      this.promptUnlockAuth(metodo);
+    };
+
     // Escuchar el evento de instalación de PWA (Chrome, Edge, Android)
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -278,7 +322,6 @@ export class NexusApp {
             }
           });
         } else {
-          // Si no está disponible el prompt directo o es iOS, abrir modal explicativo con guía
           this.openInstallModal();
         }
       });
@@ -303,12 +346,60 @@ export class NexusApp {
       this.dom.btnCloseInstallSheet.addEventListener('click', () => this.closeInstallModal());
     }
 
-    // Botón Manual Unlock (apertura remota por Firebase)
+    // ── BOTÓN MANUAL UNLOCK: Requiere Contraseña ──
     if (this.dom.btnManualUnlock) {
       this.dom.btnManualUnlock.addEventListener('click', () => {
         this.initAudio();
-        this.triggerUnlock("Manual");
+        this.promptUnlockAuth("Manual");
       });
+    }
+
+    // ── MODAL 4: PIN DE SEGURIDAD PARA ABRIR ──
+    if (this.dom.btnToggleUnlockPassword && this.dom.inputUnlockPassword) {
+      this.dom.btnToggleUnlockPassword.addEventListener('click', () => {
+        const isPwd = this.dom.inputUnlockPassword.type === 'password';
+        this.dom.inputUnlockPassword.type = isPwd ? 'text' : 'password';
+      });
+    }
+
+    if (this.dom.inputUnlockPassword) {
+      this.dom.inputUnlockPassword.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (this.dom.btnConfirmAuthUnlock) this.dom.btnConfirmAuthUnlock.click();
+        }
+      });
+    }
+
+    if (this.dom.btnConfirmAuthUnlock) {
+      this.dom.btnConfirmAuthUnlock.addEventListener('click', async () => {
+        const pin = this.dom.inputUnlockPassword ? this.dom.inputUnlockPassword.value.trim() : '';
+        if (pin !== '201106') {
+          if (this.dom.unlockErrorMsg) {
+            this.dom.unlockErrorMsg.textContent = "Contraseña incorrecta. Acceso denegado.";
+            this.dom.unlockErrorMsg.style.display = 'block';
+          }
+          this.playBeep(200, 0.25);
+          if (this.dom.inputUnlockPassword) {
+            this.dom.inputUnlockPassword.classList.add('input-error-shake');
+            setTimeout(() => this.dom.inputUnlockPassword.classList.remove('input-error-shake'), 600);
+            this.dom.inputUnlockPassword.focus();
+            this.dom.inputUnlockPassword.select();
+          }
+          return;
+        }
+
+        const method = this.pendingUnlockMethod || "Manual";
+        this.closeUnlockAuth();
+        await this.triggerUnlock(method);
+      });
+    }
+
+    if (this.dom.btnCancelAuthUnlock) {
+      this.dom.btnCancelAuthUnlock.addEventListener('click', () => this.closeUnlockAuth());
+    }
+    if (this.dom.btnCloseAuthUnlock) {
+      this.dom.btnCloseAuthUnlock.addEventListener('click', () => this.closeUnlockAuth());
     }
 
     // Helper para mensajes de error al enrolar
@@ -340,7 +431,7 @@ export class NexusApp {
       });
     }
 
-    // Toggle para visualizar/ocultar contraseña
+    // Toggle para visualizar/ocultar contraseña de admin al enrolar
     if (this.dom.btnTogglePassword && this.dom.inputAdminPassword) {
       this.dom.btnTogglePassword.addEventListener('click', () => {
         const isPwd = this.dom.inputAdminPassword.type === 'password';
@@ -348,7 +439,7 @@ export class NexusApp {
       });
     }
 
-    // Tecla Enter en campos del modal
+    // Tecla Enter en campos del modal de enrolar
     if (this.dom.inputUserName) {
       this.dom.inputUserName.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -444,7 +535,7 @@ export class NexusApp {
     }
 
     // Cerrar modales pulsando en el fondo
-    [this.dom.modalUsers, this.dom.modalPromptName, this.dom.modalInstall].forEach(m => {
+    [this.dom.modalUsers, this.dom.modalPromptName, this.dom.modalInstall, this.dom.modalAuthUnlock].forEach(m => {
       if (m) {
         m.addEventListener('click', (e) => {
           if (e.target === m) m.classList.remove('open');
