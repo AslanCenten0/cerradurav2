@@ -1,11 +1,10 @@
 /**
  * ═════════════════════════════════════════════════════════════════════
  *  app.js — Orquestador Principal de la Aplicación
- *  Enlaza la interfaz minimalista, el motor biométrico y Web Bluetooth
+ *  Enlaza la interfaz minimalista Apple y el motor biométrico con Firebase
  * ═════════════════════════════════════════════════════════════════════
  */
 
-import { BluetoothController } from './bluetooth.js';
 import { FaceRecognitionEngine } from './recognition.js';
 import { initBackgroundGrid, initSpotlightCards, initClickSparks, decryptText } from './effects.js';
 
@@ -17,8 +16,8 @@ const COOLDOWN_DURATION = 6000;
 
 export class NexusApp {
   constructor() {
-    this.bt = new BluetoothController();
     this.engine = null;
+    this.deferredPrompt = null;
 
     this.cooldownUntil = 0;
     this.audioContext = null;
@@ -27,6 +26,7 @@ export class NexusApp {
     this.dom = {
       video: document.getElementById('webcam'),
       canvas: document.getElementById('overlayCanvas'),
+      cameraWrapper: document.getElementById('cameraWrapper'),
       loader: document.getElementById('loaderSplash'),
       loaderMsg: document.getElementById('loaderMessage'),
       toast: document.getElementById('feedbackToast'),
@@ -37,8 +37,6 @@ export class NexusApp {
       fpsCounter: document.getElementById('fpsCounter'),
       scanReticle: document.getElementById('scanReticle'),
       
-      btnBluetooth: document.getElementById('btnBluetooth'),
-      btStatusLabel: document.getElementById('btStatusLabel'),
       btnOpenUsers: document.getElementById('btnOpenUsers'),
       badgeUserCount: document.getElementById('badgeUserCount'),
       btnManualUnlock: document.getElementById('btnManualUnlock'),
@@ -58,57 +56,77 @@ export class NexusApp {
       btnTogglePassword: document.getElementById('btnTogglePassword'),
       enrollErrorMsg: document.getElementById('enrollErrorMsg'),
 
+      // PWA / Descargar
       btnInstallApp: document.getElementById('btnInstallApp'),
+      labelInstallApp: document.getElementById('labelInstallApp'),
+      modalInstall: document.getElementById('modalInstall'),
+      btnCloseInstallModal: document.getElementById('btnCloseInstallModal'),
+      btnCloseInstallSheet: document.getElementById('btnCloseInstallSheet'),
+      installNativeSection: document.getElementById('installNativeSection'),
+      btnTriggerNativeInstall: document.getElementById('btnTriggerNativeInstall'),
+
       btnEnableCamera: document.getElementById('btnEnableCamera'),
     };
   }
 
   async init() {
-    // 0. Inicializar Efectos Visuales React Bits
-    initBackgroundGrid('bgCanvas');
-    initSpotlightCards();
-    initClickSparks();
+    console.log("🚀 NexusApp.init() iniciando...");
+
+    // 0. Inicializar Efectos Visuales
+    try {
+      initBackgroundGrid('bgCanvas');
+      initSpotlightCards();
+      initClickSparks();
+    } catch (e) {
+      console.warn("Efectos visuales no críticos:", e);
+    }
 
     const brandName = document.querySelector('.brand-name');
     if (brandName) {
       decryptText(brandName, "NEXUS ACCESS", 900, 35);
     }
 
-    // 1. Inicializar PWA Service Worker
+    // 1. Conectar Eventos de la Interfaz
+    this.bindUIEvents();
+
+    // 2. Registrar Service Worker para PWA
     this.registerServiceWorker();
 
-    // 2. Conectar Eventos de Bluetooth
-    this.setupBluetooth();
-
-    // 3. Inicializar Cámara y Reconocimiento Facial
+    // 3. Inicializar Motor Biométrico
     this.engine = new FaceRecognitionEngine(this.dom.video, this.dom.canvas);
-    this.engine.onStatusMessage = (msg) => {
-      this.dom.loaderMsg.textContent = msg;
-    };
-
-    try {
-      await this.engine.loadModels();
-    } catch (errModels) {
-      console.warn("Advertencia cargando modelos:", errModels);
-    }
-
-    await this.tryStartCamera();
-
-    // 4. Conectar Eventos de la Interfaz
-    this.bindUIEvents();
     this.updateUserBadge();
 
-    // 5. Medidor de FPS
+    // 4. Iniciar Cámara de forma prioritaria e INMEDIATA (sin esperar modelos pesados)
+    const cameraPromise = this.tryStartCamera();
+
+    // 5. Cargar Redes Neuronales en paralelo en segundo plano
+    const modelsPromise = (async () => {
+      try {
+        if (this.dom.statusText) this.dom.statusText.textContent = "Cargando IA facial...";
+        await this.engine.loadModels();
+        if (this.dom.statusText) this.dom.statusText.textContent = "Esperando rostro...";
+        console.log("✅ Modelos neuronales listos para reconocimiento.");
+      } catch (errModels) {
+        console.warn("Advertencia cargando modelos neuronales:", errModels);
+        if (this.dom.statusText) this.dom.statusText.textContent = "Error al cargar IA facial";
+      }
+    })();
+
+    // 6. Medidor de FPS
     this.startFPSMeter();
+
+    await Promise.allSettled([cameraPromise, modelsPromise]);
+    console.log("✅ NexusApp.init() completamente activo.");
   }
 
   async tryStartCamera() {
     try {
       if (this.dom.loaderMsg) this.dom.loaderMsg.textContent = "Conectando cámara...";
       console.log("📷 Iniciando tryStartCamera...");
+      
       await this.engine.startCamera();
 
-      // Ocultar splash loader suavemente
+      // Ocultar pantalla de carga de inmediato
       if (this.dom.loader) {
         this.dom.loader.classList.add('hidden');
         setTimeout(() => {
@@ -117,13 +135,14 @@ export class NexusApp {
       }
       this.showToast("Cámara activa");
 
-      // Configurar escucha de detección
+      // Iniciar bucle de detección facial
       this.engine.onFaceDetected = (result) => this.handleFaceDetection(result);
       this.engine.startLoop();
 
       if (this.dom.btnEnableCamera) {
         this.dom.btnEnableCamera.style.display = 'none';
       }
+      console.log("✅ Cámara y stream activos.");
     } catch (err) {
       console.error("❌ Error al iniciar la cámara:", err);
       if (this.dom.loaderMsg) {
@@ -132,8 +151,10 @@ export class NexusApp {
       
       if (this.dom.btnEnableCamera) {
         this.dom.btnEnableCamera.style.display = 'inline-flex';
-        this.dom.btnEnableCamera.onclick = async () => {
+        this.dom.btnEnableCamera.onclick = async (e) => {
+          e.stopPropagation();
           if (this.dom.loaderMsg) this.dom.loaderMsg.textContent = "Solicitando permisos...";
+          this.dom.btnEnableCamera.style.display = 'none';
           await this.tryStartCamera();
         };
       }
@@ -141,40 +162,18 @@ export class NexusApp {
   }
 
   /**
-   * Registro de Service Worker para PWA (Instalable en iPhone y Android)
+   * Registro de Service Worker para PWA
    */
   registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log("✅ PWA Service Worker registrado:", reg.scope))
-          .catch(err => console.log("PWA SW no registrado:", err));
-      });
+      navigator.serviceWorker.register('sw.js?v=9')
+        .then(reg => {
+          console.log("✅ PWA Service Worker registrado con éxito:", reg.scope);
+          // Forzar chequeo de actualización inmediata
+          reg.update().catch(() => {});
+        })
+        .catch(err => console.log("PWA SW no registrado:", err));
     }
-  }
-
-  /**
-   * Configuración de Web Bluetooth
-   */
-  setupBluetooth() {
-    this.bt.onStateChange = (connected, deviceName) => {
-      if (connected) {
-        this.dom.btnBluetooth.classList.add('connected');
-        this.dom.btStatusLabel.textContent = deviceName ? deviceName.slice(0, 10) : "BLE Activo";
-        this.dom.btnManualUnlock.disabled = false;
-        this.showToast(`Conectado a ${deviceName}`);
-        this.playBeep(880, 0.1);
-      } else {
-        this.dom.btnBluetooth.classList.remove('connected');
-        this.dom.btStatusLabel.textContent = "Conectar BLE";
-        this.showToast("Bluetooth desconectado");
-      }
-    };
-
-    this.bt.onMessageReceived = (msg) => {
-      console.log("Mensaje de ESP32:", msg);
-      this.showToast(`ESP32: ${msg}`);
-    };
   }
 
   /**
@@ -187,52 +186,50 @@ export class NexusApp {
     // Si estamos en período de enfriamiento (cooldown tras apertura)
     if (ahora < this.cooldownUntil) {
       const restantes = Math.ceil((this.cooldownUntil - ahora) / 1000);
-      this.dom.cooldownTimer.textContent = `ESPERA: ${restantes}s`;
-      this.dom.statusText.textContent = "Acceso concedido recientemente";
-      this.dom.statusPulse.className = "pulse-ring active";
+      if (this.dom.cooldownTimer) this.dom.cooldownTimer.textContent = `ESPERA: ${restantes}s`;
+      if (this.dom.statusText) this.dom.statusText.textContent = "Acceso concedido recientemente";
+      if (this.dom.statusPulse) this.dom.statusPulse.className = "pulse-ring active";
       return;
     } else {
-      this.dom.cooldownTimer.textContent = "";
+      if (this.dom.cooldownTimer) this.dom.cooldownTimer.textContent = "";
     }
 
     if (!hasFace) {
-      reticle.className = "scan-reticle";
-      this.dom.statusText.textContent = "Esperando rostro...";
-      this.dom.statusPulse.className = "pulse-ring";
+      if (reticle) reticle.className = "scan-reticle";
+      if (this.dom.statusText) this.dom.statusText.textContent = "Esperando rostro...";
+      if (this.dom.statusPulse) this.dom.statusPulse.className = "pulse-ring";
       return;
     }
 
     if (match) {
       // 🟢 Rostro Autorizado Detectado
-      reticle.className = "scan-reticle authorized";
-      this.dom.statusText.textContent = `AUTORIZADO: ${match.name.toUpperCase()} (${match.confidence}%)`;
-      this.dom.statusPulse.className = "pulse-ring active";
+      if (reticle) reticle.className = "scan-reticle authorized";
+      if (this.dom.statusText) this.dom.statusText.textContent = `AUTORIZADO: ${match.name.toUpperCase()} (${match.confidence}%)`;
+      if (this.dom.statusPulse) this.dom.statusPulse.className = "pulse-ring active";
 
-      // Disparar Apertura Inalámbrica
+      // Disparar Apertura
       this.triggerUnlock(match.name);
 
     } else {
       // 🔴 Rostro No Reconocido
-      reticle.className = "scan-reticle unauthorized";
-      this.dom.statusText.textContent = "Rostro no registrado";
-      this.dom.statusPulse.className = "pulse-ring denied";
+      if (reticle) reticle.className = "scan-reticle unauthorized";
+      if (this.dom.statusText) this.dom.statusText.textContent = "Rostro no registrado";
+      if (this.dom.statusPulse) this.dom.statusPulse.className = "pulse-ring denied";
     }
   }
 
   /**
-   * Ejecuta la orden de apertura a través de Bluetooth o Simulación
+   * Ejecuta la orden de apertura a través de Firebase Realtime Database
    */
   async triggerUnlock(userName) {
     this.cooldownUntil = Date.now() + COOLDOWN_DURATION;
     this.playUnlockChime();
     this.showToast(`🔓 Acceso concedido a ${userName}`);
 
-    if (this.bt.isConnected) {
-      await this.bt.openLock(userName);
-    } else if (window._firebaseAbrirRemoto) {
+    if (window._firebaseAbrirRemoto) {
       await window._firebaseAbrirRemoto("FACIAL: " + userName);
     } else {
-      console.log(`[LOCAL] Apertura concedida para: ${userName} (Sin Bluetooth conectado aún)`);
+      console.log(`[LOCAL] Apertura concedida para: ${userName}`);
     }
   }
 
@@ -240,51 +237,81 @@ export class NexusApp {
    * Enlaza botones y modales
    */
   bindUIEvents() {
-    // Botón de Descargar / Instalar App (PWA)
-    let deferredPrompt = null;
+    // Escuchar el evento de instalación de PWA (Chrome, Edge, Android)
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
-      deferredPrompt = e;
-      if (this.dom.btnInstallApp) {
-        this.dom.btnInstallApp.style.display = 'inline-flex';
+      this.deferredPrompt = e;
+      console.log("📲 Evento beforeinstallprompt capturado!");
+      if (this.dom.installNativeSection) {
+        this.dom.installNativeSection.style.display = 'block';
       }
     });
 
-    if (this.dom.btnInstallApp) {
-      this.dom.btnInstallApp.addEventListener('click', async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          console.log(`Instalación PWA: ${outcome}`);
-          deferredPrompt = null;
-        } else {
-          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-          if (isIOS) {
-            alert("📲 Para instalar en iPhone / iPad:\n\n1. Toca el botón Compartir de Safari (icono 📤 en la barra inferior).\n2. Selecciona 'Añadir a la pantalla de inicio'.");
-          } else {
-            alert("📲 Para instalar en Android o PC:\n\n1. Toca los tres puntos (⋮) arriba a la derecha en Chrome.\n2. Presiona 'Instalar aplicación' o 'Añadir a pantalla de inicio'.");
-          }
+    window.addEventListener('appinstalled', () => {
+      console.log("🎉 PWA instalada exitosamente!");
+      this.deferredPrompt = null;
+      if (this.dom.labelInstallApp) {
+        this.dom.labelInstallApp.textContent = "Instalada";
+      }
+      this.showToast("¡Aplicación instalada!");
+    });
+
+    // Tap en cualquier parte del visor de cámara para desbloquear autoplay si el navegador lo pausó
+    if (this.dom.cameraWrapper) {
+      this.dom.cameraWrapper.addEventListener('click', () => {
+        if (this.dom.video && this.dom.video.paused) {
+          console.log("Tapping cámara para forzar video.play()...");
+          this.dom.video.play().catch(e => console.warn("play err:", e));
         }
       });
     }
 
-    // Botón Bluetooth
-    this.dom.btnBluetooth.addEventListener('click', async () => {
-      this.initAudio();
-      if (!this.bt.isConnected) {
-        await this.bt.connect();
-      } else {
-        this.bt.disconnect();
-      }
-    });
+    // Botón Descargar / Instalar App
+    if (this.dom.btnInstallApp) {
+      this.dom.btnInstallApp.addEventListener('click', () => {
+        if (this.deferredPrompt) {
+          this.deferredPrompt.prompt();
+          this.deferredPrompt.userChoice.then(({ outcome }) => {
+            console.log(`Resultado de instalación: ${outcome}`);
+            if (outcome === 'accepted') {
+              this.deferredPrompt = null;
+            }
+          });
+        } else {
+          // Si no está disponible el prompt directo o es iOS, abrir modal explicativo con guía
+          this.openInstallModal();
+        }
+      });
+    }
 
-    // Botón Manual Unlock
-    this.dom.btnManualUnlock.addEventListener('click', () => {
-      this.initAudio();
-      this.triggerUnlock("Manual");
-    });
+    // Botón de instalación nativa dentro del modal
+    if (this.dom.btnTriggerNativeInstall) {
+      this.dom.btnTriggerNativeInstall.addEventListener('click', () => {
+        if (this.deferredPrompt) {
+          this.deferredPrompt.prompt();
+          this.deferredPrompt.userChoice.then(() => {
+            this.closeInstallModal();
+          });
+        }
+      });
+    }
 
-        // Helper para mensajes de error al enrolar
+    if (this.dom.btnCloseInstallModal) {
+      this.dom.btnCloseInstallModal.addEventListener('click', () => this.closeInstallModal());
+    }
+    if (this.dom.btnCloseInstallSheet) {
+      this.dom.btnCloseInstallSheet.addEventListener('click', () => this.closeInstallModal());
+    }
+
+    // Botón Manual Unlock (apertura remota por Firebase)
+    if (this.dom.btnManualUnlock) {
+      this.dom.btnManualUnlock.addEventListener('click', () => {
+        this.initAudio();
+        this.triggerUnlock("Manual");
+      });
+    }
+
+    // Helper para mensajes de error al enrolar
     this.showEnrollError = (msg) => {
       if (this.dom.enrollErrorMsg) {
         this.dom.enrollErrorMsg.textContent = msg;
@@ -299,17 +326,19 @@ export class NexusApp {
     };
 
     // Botón Enrolar Rostro
-    this.dom.btnRegisterFace.addEventListener('click', () => {
-      this.initAudio();
-      this.dom.inputUserName.value = '';
-      if (this.dom.inputAdminPassword) {
-        this.dom.inputAdminPassword.value = '';
-        this.dom.inputAdminPassword.type = 'password';
-      }
-      this.hideEnrollError();
-      this.dom.modalPromptName.classList.add('open');
-      setTimeout(() => this.dom.inputUserName.focus(), 150);
-    });
+    if (this.dom.btnRegisterFace) {
+      this.dom.btnRegisterFace.addEventListener('click', () => {
+        this.initAudio();
+        this.dom.inputUserName.value = '';
+        if (this.dom.inputAdminPassword) {
+          this.dom.inputAdminPassword.value = '';
+          this.dom.inputAdminPassword.type = 'password';
+        }
+        this.hideEnrollError();
+        this.dom.modalPromptName.classList.add('open');
+        setTimeout(() => this.dom.inputUserName.focus(), 150);
+      });
+    }
 
     // Toggle para visualizar/ocultar contraseña
     if (this.dom.btnTogglePassword && this.dom.inputAdminPassword) {
@@ -320,12 +349,14 @@ export class NexusApp {
     }
 
     // Tecla Enter en campos del modal
-    this.dom.inputUserName.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (this.dom.inputAdminPassword) this.dom.inputAdminPassword.focus();
-      }
-    });
+    if (this.dom.inputUserName) {
+      this.dom.inputUserName.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (this.dom.inputAdminPassword) this.dom.inputAdminPassword.focus();
+        }
+      });
+    }
     if (this.dom.inputAdminPassword) {
       this.dom.inputAdminPassword.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -336,87 +367,114 @@ export class NexusApp {
     }
 
     // Confirmar Enrolamiento con Contraseña de Admin (201106)
-    this.dom.btnConfirmEnroll.addEventListener('click', async () => {
-      const name = this.dom.inputUserName.value.trim();
-      const password = this.dom.inputAdminPassword ? this.dom.inputAdminPassword.value.trim() : '';
+    if (this.dom.btnConfirmEnroll) {
+      this.dom.btnConfirmEnroll.addEventListener('click', async () => {
+        const name = this.dom.inputUserName.value.trim();
+        const password = this.dom.inputAdminPassword ? this.dom.inputAdminPassword.value.trim() : '';
 
-      this.hideEnrollError();
+        this.hideEnrollError();
 
-      if (!name) {
-        this.showEnrollError("Ingresa un nombre para el rostro.");
-        this.dom.inputUserName.focus();
-        return;
-      }
-
-      if (password !== '201106') {
-        this.showEnrollError("Contraseña incorrecta. Acceso de administrador denegado.");
-        this.playBeep(200, 0.25);
-        if (this.dom.inputAdminPassword) {
-          this.dom.inputAdminPassword.classList.add('input-error-shake');
-          setTimeout(() => this.dom.inputAdminPassword.classList.remove('input-error-shake'), 600);
-          this.dom.inputAdminPassword.focus();
-          this.dom.inputAdminPassword.select();
+        if (!name) {
+          this.showEnrollError("Ingresa un nombre para el rostro.");
+          this.dom.inputUserName.focus();
+          return;
         }
-        return;
-      }
 
-      try {
-        this.dom.btnConfirmEnroll.disabled = true;
-        this.dom.btnConfirmEnroll.textContent = "Analizando biometría...";
+        if (password !== '201106') {
+          this.showEnrollError("Contraseña incorrecta. Acceso denegado.");
+          this.playBeep(200, 0.25);
+          if (this.dom.inputAdminPassword) {
+            this.dom.inputAdminPassword.classList.add('input-error-shake');
+            setTimeout(() => this.dom.inputAdminPassword.classList.remove('input-error-shake'), 600);
+            this.dom.inputAdminPassword.focus();
+            this.dom.inputAdminPassword.select();
+          }
+          return;
+        }
 
-        const nuevo = await this.engine.enrollCurrentFace(name);
+        try {
+          this.dom.btnConfirmEnroll.disabled = true;
+          this.dom.btnConfirmEnroll.textContent = "Analizando...";
+
+          const nuevo = await this.engine.enrollCurrentFace(name);
+          this.dom.modalPromptName.classList.remove('open');
+          this.updateUserBadge();
+          this.showToast(`Rostro de ${nuevo.name} registrado`);
+          this.playBeep(600, 0.15);
+
+        } catch (err) {
+          this.showEnrollError(err.message || "No se detectó un rostro claro en cámara");
+          this.playBeep(200, 0.2);
+        } finally {
+          this.dom.btnConfirmEnroll.disabled = false;
+          this.dom.btnConfirmEnroll.textContent = "Guardar";
+        }
+      });
+    }
+
+    if (this.dom.btnCancelEnroll) {
+      this.dom.btnCancelEnroll.addEventListener('click', () => {
         this.dom.modalPromptName.classList.remove('open');
-        this.updateUserBadge();
-        this.showToast(`Rostro de ${nuevo.name} registrado con éxito`);
-        this.playBeep(600, 0.15);
-
-      } catch (err) {
-        this.showEnrollError(err.message || "No se detectó un rostro claro en cámara");
-        this.playBeep(200, 0.2);
-      } finally {
-        this.dom.btnConfirmEnroll.disabled = false;
-        this.dom.btnConfirmEnroll.textContent = "Guardar Rostro";
-      }
-    });
-
-    this.dom.btnCancelEnroll.addEventListener('click', () => {
-      this.dom.modalPromptName.classList.remove('open');
-    });
+      });
+    }
 
     // Modal de Usuarios
-    this.dom.btnOpenUsers.addEventListener('click', () => {
-      this.renderUsersList();
-      this.dom.modalUsers.classList.add('open');
-    });
-
-    this.dom.btnCloseModal.addEventListener('click', () => {
-      this.dom.modalUsers.classList.remove('open');
-    });
-
-    this.dom.btnClearAllUsers.addEventListener('click', () => {
-      if (confirm("¿Seguro que deseas eliminar todos los rostros autorizados?")) {
-        this.engine.clearAllUsers();
+    if (this.dom.btnOpenUsers) {
+      this.dom.btnOpenUsers.addEventListener('click', () => {
         this.renderUsersList();
-        this.updateUserBadge();
-        this.showToast("Todos los usuarios borrados");
+        this.dom.modalUsers.classList.add('open');
+      });
+    }
+
+    if (this.dom.btnCloseModal) {
+      this.dom.btnCloseModal.addEventListener('click', () => {
+        this.dom.modalUsers.classList.remove('open');
+      });
+    }
+
+    if (this.dom.btnClearAllUsers) {
+      this.dom.btnClearAllUsers.addEventListener('click', () => {
+        if (confirm("¿Seguro que deseas eliminar todos los rostros autorizados?")) {
+          this.engine.clearAllUsers();
+          this.renderUsersList();
+          this.updateUserBadge();
+          this.showToast("Todos los usuarios borrados");
+        }
+      });
+    }
+
+    // Cerrar modales pulsando en el fondo
+    [this.dom.modalUsers, this.dom.modalPromptName, this.dom.modalInstall].forEach(m => {
+      if (m) {
+        m.addEventListener('click', (e) => {
+          if (e.target === m) m.classList.remove('open');
+        });
       }
     });
+  }
 
-    // Cerrar modales pulsando fuera
-    [this.dom.modalUsers, this.dom.modalPromptName].forEach(m => {
-      m.addEventListener('click', (e) => {
-        if (e.target === m) m.classList.remove('open');
-      });
-    });
+  openInstallModal() {
+    if (!this.dom.modalInstall) return;
+    if (this.deferredPrompt && this.dom.installNativeSection) {
+      this.dom.installNativeSection.style.display = 'block';
+    }
+    this.dom.modalInstall.classList.add('open');
+  }
+
+  closeInstallModal() {
+    if (this.dom.modalInstall) {
+      this.dom.modalInstall.classList.remove('open');
+    }
   }
 
   renderUsersList() {
     const list = this.dom.userList;
+    if (!list) return;
     list.innerHTML = '';
 
     const users = this.engine.knownFaces;
     if (users.length === 0) {
-      list.innerHTML = '<li class="empty-state">No hay rostros registrados aún. Pulsa "Enrolar Rostro Actual".</li>';
+      list.innerHTML = '<li class="empty-state">No hay rostros registrados aún.</li>';
       return;
     }
 
@@ -450,10 +508,13 @@ export class NexusApp {
   }
 
   updateUserBadge() {
-    this.dom.badgeUserCount.textContent = this.engine.knownFaces.length;
+    if (this.dom.badgeUserCount && this.engine) {
+      this.dom.badgeUserCount.textContent = this.engine.knownFaces.length;
+    }
   }
 
   showToast(msg) {
+    if (!this.dom.toastMsg || !this.dom.toast) return;
     this.dom.toastMsg.textContent = msg;
     this.dom.toast.classList.add('show');
     clearTimeout(this._toastTimeout);
@@ -498,7 +559,7 @@ export class NexusApp {
       frameCount++;
       const now = performance.now();
       if (now - lastTime >= 1000) {
-        this.dom.fpsCounter.textContent = `${frameCount} FPS`;
+        if (this.dom.fpsCounter) this.dom.fpsCounter.textContent = `${frameCount} FPS`;
         frameCount = 0;
         lastTime = now;
       }
@@ -508,16 +569,18 @@ export class NexusApp {
   }
 }
 
+// ── BOOT: arranque seguro ──
 function boot() {
   if (window.__nexusAppLoaded) return;
   window.__nexusAppLoaded = true;
+  console.log("🔧 boot() inicializando NexusApp...");
   const app = new NexusApp();
   app.init();
   window.nexusApp = app;
 }
 
 if (document.readyState === 'loading') {
-  window.addEventListener('DOMContentLoaded', boot);
+  document.addEventListener('DOMContentLoaded', boot);
 } else {
   boot();
 }

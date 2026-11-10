@@ -31,6 +31,10 @@ export class FaceRecognitionEngine {
    */
   async loadModels() {
     try {
+      if (typeof faceapi === 'undefined') {
+        throw new Error("faceapi no está definido en el ámbito global.");
+      }
+
       if (this.onStatusMessage) this.onStatusMessage("Inicializando red neuronal...");
 
       // 1. Detector ligero para móviles (TinyFaceDetector)
@@ -56,74 +60,104 @@ export class FaceRecognitionEngine {
   }
 
   /**
-   * Inicia la cámara web del dispositivo
+   * Inicia la cámara web del dispositivo con múltiples niveles de fallback
    */
   async startCamera() {
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Este dispositivo no soporta acceso a la cámara o requiere HTTPS.");
-      }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("Este dispositivo no soporta acceso a la cámara o requiere HTTPS.");
+    }
 
-      console.log("📷 Solicitando acceso a cámara...");
-      let stream = null;
-      // 1. Intentar con cámara frontal optimizada
+    console.log("📷 Solicitando acceso a cámara...");
+    let stream = null;
+
+    // Nivel 1: Cámara frontal optimizada
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      });
+    } catch (err1) {
+      console.warn("Fallo nivel 1 (facingMode+resolución), probando nivel 2:", err1);
+      // Nivel 2: Solo facingMode user
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: {
-            facingMode: 'user',
-            width: { ideal: 640 },
-            height: { ideal: 480 }
-          }
+          video: { facingMode: 'user' }
         });
-      } catch (err1) {
-        console.warn("Fallo con opciones ideales de cámara, reintentando con fallback:", err1);
-        // 2. Fallback a cualquier cámara disponible
+      } catch (err2) {
+        console.warn("Fallo nivel 2 (facingMode simple), probando nivel 3 (cualquier cámara):", err2);
+        // Nivel 3: Cualquier cámara disponible
         stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: true
         });
       }
+    }
 
-      this.video.srcObject = stream;
-      this.video.setAttribute('playsinline', '');
-      this.video.setAttribute('webkit-playsinline', 'true');
-      this.video.muted = true;
+    if (!stream) {
+      throw new Error("No se pudo obtener un stream de cámara válido.");
+    }
 
-      try {
-        await this.video.play();
-      } catch (playErr) {
-        console.warn("video.play() diferido o esperando interacción:", playErr);
+    // Configuración estricta de reproducción inline y sin sonido para evitar bloqueos del navegador
+    this.video.muted = true;
+    this.video.defaultMuted = true;
+    this.video.playsInline = true;
+    this.video.autoplay = true;
+    this.video.setAttribute('playsinline', '');
+    this.video.setAttribute('webkit-playsinline', 'true');
+    this.video.setAttribute('muted', '');
+    this.video.srcObject = stream;
+
+    // Intentar reproducción inmediata
+    try {
+      await this.video.play();
+      console.log("▶️ video.play() iniciado correctamente");
+    } catch (playErr) {
+      console.warn("video.play() diferido o bloqueado por política de autoplay:", playErr);
+    }
+
+    // Esperar a que el video tenga dimensiones activas
+    await new Promise((resolve) => {
+      if (this.video.videoWidth > 0 && this.video.videoHeight > 0) {
+        resolve();
+        return;
       }
 
-      await new Promise((resolve) => {
-        if (this.video.videoWidth > 0) {
-          resolve();
-        } else {
-          const onMeta = () => {
-            this.video.removeEventListener('loadedmetadata', onMeta);
-            resolve();
-          };
-          this.video.addEventListener('loadedmetadata', onMeta);
-          setTimeout(resolve, 800);
-        }
-      });
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        this.video.removeEventListener('loadedmetadata', done);
+        this.video.removeEventListener('loadeddata', done);
+        this.video.removeEventListener('canplay', done);
+        this.video.removeEventListener('playing', done);
+        resolve();
+      };
 
-      this.adjustCanvasDimensions();
-      window.addEventListener('resize', () => this.adjustCanvasDimensions());
-      console.log("✅ Cámara inicializada correctamente:", this.video.videoWidth, "x", this.video.videoHeight);
-      return true;
-    } catch (err) {
-      console.error("❌ Error accediendo a la cámara:", err);
-      throw err;
-    }
+      this.video.addEventListener('loadedmetadata', done);
+      this.video.addEventListener('loadeddata', done);
+      this.video.addEventListener('canplay', done);
+      this.video.addEventListener('playing', done);
+
+      // Tiempo límite de seguridad de 1200ms
+      setTimeout(done, 1200);
+    });
+
+    this.adjustCanvasDimensions();
+    window.addEventListener('resize', () => this.adjustCanvasDimensions());
+    console.log("✅ Cámara inicializada:", this.video.videoWidth, "x", this.video.videoHeight);
+    return true;
   }
 
   /**
    * Sincroniza el tamaño del canvas con la visualización del video
    */
   adjustCanvasDimensions() {
-    if (!this.video.videoWidth) return;
+    if (!this.video || !this.video.videoWidth) return;
     this.canvas.width = this.video.videoWidth;
     this.canvas.height = this.video.videoHeight;
   }
@@ -138,8 +172,13 @@ export class FaceRecognitionEngine {
     const detectLoop = async () => {
       if (!this.isRunning) return;
 
-      if (this.video.readyState >= 2 && this.isModelLoaded) {
-        await this.detectAndRecognize();
+      if (this.video.readyState >= 2 && this.video.videoWidth > 0 && this.isModelLoaded) {
+        try {
+          await this.detectAndRecognize();
+        } catch (e) {
+          // Loggear error sin romper el loop de animación
+          console.warn("Fotograma omitido en biometría:", e);
+        }
       }
 
       requestAnimationFrame(detectLoop);
@@ -156,6 +195,8 @@ export class FaceRecognitionEngine {
    * Detecta rostros en el fotograma actual y los compara con la base local
    */
   async detectAndRecognize() {
+    if (!this.video || this.video.videoWidth === 0) return;
+
     // Configuración optimizada de TinyFaceDetector
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
     
@@ -256,7 +297,8 @@ export class FaceRecognitionEngine {
     if (isAuth) {
       this.ctx.font = '500 12px -apple-system, sans-serif';
       this.ctx.fillStyle = color;
-      this.ctx.fillText(${match.name}, x + 4, y - 8);
+      this.ctx.shadowBlur = 6;
+      this.ctx.fillText(match.name, x + 4, y - 8);
     }
 
     this.ctx.restore();
@@ -268,6 +310,10 @@ export class FaceRecognitionEngine {
   async enrollCurrentFace(userName) {
     if (!userName || !userName.trim()) {
       throw new Error("El nombre no puede estar vacío");
+    }
+
+    if (!this.isModelLoaded) {
+      throw new Error("Los modelos neuronales aún se están descargando. Espera un momento.");
     }
 
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.6 });

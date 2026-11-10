@@ -7,12 +7,13 @@
   <title>Nexus Access</title>
 
   <!-- PWA Manifest & Icons -->
-  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="manifest" href="manifest.webmanifest?v=9" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
 
   <!-- Apple System Font & Estilos -->
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=9" />
 
   <!-- Biblioteca Face-API (TensorFlow.js WebGL) -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
@@ -32,22 +33,14 @@
       </div>
 
       <div class="header-actions">
-        <!-- Botón Instalar PWA -->
-        <button id="btnInstallApp" class="btn-pill" title="Instalar">
+        <!-- Botón Descargar / Instalar App -->
+        <button id="btnInstallApp" class="btn-pill" title="Descargar / Instalar">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          <span>Instalar</span>
-        </button>
-
-        <!-- Conectar Bluetooth BLE -->
-        <button id="btnBluetooth" class="btn-pill" title="Bluetooth">
-          <svg class="icon-bt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-            <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>
-          </svg>
-          <span id="btStatusLabel">Conectar</span>
+          <span id="labelInstallApp">Descargar</span>
         </button>
 
         <!-- Administrador de Usuarios -->
@@ -87,8 +80,8 @@
     <main id="tabBiometria" class="tab-content active camera-stage">
 
       <!-- Viewport de la Cámara -->
-      <div class="camera-wrapper">
-        <video id="webcam" autoplay playsinline muted></video>
+      <div class="camera-wrapper" id="cameraWrapper">
+        <video id="webcam" autoplay playsinline muted webkit-playsinline></video>
         <canvas id="overlayCanvas"></canvas>
 
         <!-- Retícula limpia y discreta -->
@@ -105,11 +98,11 @@
           <span id="toastMessage">Listo</span>
         </div>
 
-        <!-- Pantalla de Carga -->
+        <!-- Pantalla de Carga Frosted -->
         <div id="loaderSplash" class="loader-splash">
           <div class="spinner"></div>
           <div id="loaderMessage">Iniciando cámara...</div>
-          <button id="btnEnableCamera" class="btn-pill" style="display: none; margin-top: 8px;">
+          <button id="btnEnableCamera" class="btn-primary" style="display: none; margin-top: 10px; height: 34px; padding: 0 14px; font-size: 12px;">
             Activar Cámara
           </button>
         </div>
@@ -119,7 +112,7 @@
       <div class="status-shelf">
         <div class="status-indicator">
           <div id="statusPulse" class="pulse-ring"></div>
-          <span id="statusText" class="status-text">Esperando rostro</span>
+          <span id="statusText" class="status-text">Iniciando cámara...</span>
         </div>
         <div class="status-meta">
           <span id="cooldownTimer"></span>
@@ -129,7 +122,7 @@
 
       <!-- Controles Compactos -->
       <div class="control-deck">
-        <button id="btnManualUnlock" class="btn-secondary" disabled>
+        <button id="btnManualUnlock" class="btn-secondary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
@@ -296,6 +289,58 @@
         <div class="modal-footer">
           <button id="btnCancelEnroll" class="btn-secondary">Cancelar</button>
           <button id="btnConfirmEnroll" class="btn-primary">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         MODAL 3: DESCARGAR / INSTALAR APLICACIÓN
+         ══════════════════════════════════════════════════════════════════ -->
+    <div id="modalInstall" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="sheet-grabber"></div>
+        <div class="modal-header">
+          <h3>Descargar / Instalar</h3>
+          <button id="btnCloseInstallModal" class="btn-close" title="Cerrar">&times;</button>
+        </div>
+        
+        <div class="install-sheet-body">
+          <p class="install-sheet-desc">Instala Nexus Access en tu pantalla de inicio para una experiencia nativa sin barra de navegador y con cámara rápida.</p>
+          
+          <div id="installNativeSection" style="display: none; margin-bottom: 12px;">
+            <button id="btnTriggerNativeInstall" class="btn-primary" style="width: 100%;">
+              Instalar App Directamente
+            </button>
+          </div>
+
+          <div class="install-guide-box">
+            <div class="guide-platform" id="guideIOS">
+              <div class="guide-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/></svg>
+                En iPhone o iPad (Safari)
+              </div>
+              <ol class="guide-steps">
+                <li>Toca el botón <strong>Compartir</strong> (icono de cuadrado con flecha <strong>⎋ / 📤</strong> abajo).</li>
+                <li>Desliza y selecciona <strong>"Agregar al inicio"</strong> (<strong>➕</strong>).</li>
+                <li>Pulsa <strong>Agregar</strong> arriba a la derecha.</li>
+              </ol>
+            </div>
+
+            <div class="guide-platform" id="guideAndroid">
+              <div class="guide-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                En Android o Chrome / Edge
+              </div>
+              <ol class="guide-steps">
+                <li>Toca el menú de tres puntos (<strong>⋮</strong>) arriba a la derecha.</li>
+                <li>Selecciona <strong>"Instalar aplicación"</strong> o <strong>"Agregar a pantalla principal"</strong>.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnCloseInstallSheet" class="btn-secondary">Entendido</button>
         </div>
       </div>
     </div>
@@ -474,8 +519,8 @@
     };
   </script>
 
-  <!-- Orquestador Principal ES6 -->
-  <script type="module" src="js/app.js"></script>
+  <!-- Orquestador Principal ES6 con Cache Busting -->
+  <script type="module" src="js/app.js?v=9"></script>
 
 </body>
 </html>
