@@ -31,11 +31,11 @@ const String FIREBASE_HOST = "https://nexus-cerradura-default-rtdb.firebaseio.co
 #define PIN_SERVO 18
 Servo miServo;
 
-// Calibración mecánica corregida:
-// CERRADO: 180° (traba hacia abajo)
-// ABIERTO:   0° (libera el cerrojo hacia arriba)
-const int ANGULO_CERRADO = 180;
-const int ANGULO_ABIERTO = 0;
+// Calibración mecánica original:
+// CERRADO:   0°
+// ABIERTO: 180°
+const int ANGULO_CERRADO = 0;
+const int ANGULO_ABIERTO = 180;
 
 // Indicadores LED
 #define LED_ROJO  15  // Encendido cuando está CERRADO / Alarma
@@ -204,7 +204,7 @@ void abrirCerradura(const char* metodo, bool conAutoCierre) {
   
   digitalWrite(LED_ROJO,  LOW);
   digitalWrite(LED_VERDE, HIGH);
-  moverServo(ANGULO_ABIERTO); // 0°: Libera cerrojo
+  moverServo(ANGULO_ABIERTO); // 180°: Abre cerrojo
   
   actualizarFirebase("ABIERTO", metodoAcceso);
   
@@ -222,7 +222,7 @@ void cerrarCerradura() {
   
   digitalWrite(LED_ROJO,  HIGH);
   digitalWrite(LED_VERDE, LOW);
-  moverServo(ANGULO_CERRADO); // 180°: Traba cerrojo
+  moverServo(ANGULO_CERRADO); // 0°: Bloquea cerrojo
 
   actualizarFirebase("CERRADO", metodoAcceso);
   
@@ -304,7 +304,7 @@ void setup() {
   digitalWrite(LED_ROJO,  HIGH); // Comienza CERRADO
   digitalWrite(LED_VERDE, LOW);
 
-  // Posición inicial del Servomotor: Bloqueado (180°)
+  // Posición inicial del Servomotor: Bloqueado (0°)
   moverServo(ANGULO_CERRADO);
 
   Serial.println("\n╔═══════════════════════════════════════════════════════╗");
