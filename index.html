@@ -7,13 +7,13 @@
   <title>Nexus Access</title>
 
   <!-- PWA Manifest & Icons -->
-  <link rel="manifest" href="manifest.webmanifest?v=12" />
+  <link rel="manifest" href="manifest.webmanifest?v=13" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 
   <!-- Apple System Font & Estilos -->
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 
   <!-- Biblioteca Face-API (TensorFlow.js WebGL) -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
@@ -210,7 +210,7 @@
             <span class="opt-badge badge-active">PIN: 201106#</span>
           </div>
           <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.45;">
-            Ingresa <strong>201106</strong> seguido de <strong>#</strong> en la matriz para desbloquear por 15 segundos. Presiona <strong>*</strong> para cancelar o bloquear inmediatamente.
+            Ingresa <strong>201106#</strong> para abrir de forma continua. Pulsa la tecla <strong>*</strong> en el teclado (o el botón Cerrar de la web) para bloquear.
           </div>
         </div>
 
@@ -492,7 +492,7 @@
             if (btnAbrir) btnAbrir.disabled = true;
             
             let logDesc = data.metodo || "ESP32";
-            if (logDesc === "TECLADO_4X4") logDesc = "Teclado 4x4 (15s)";
+            if (logDesc === "TECLADO_4X4") logDesc = "Teclado 4x4 (Manual)";
             agregarLog("Apertura", logDesc);
           } else {
             if (texto) texto.textContent = "CERRADO";
@@ -582,7 +582,7 @@
   </script>
 
   <!-- Orquestador Principal ES6 con Cache Busting -->
-  <script type="module" src="js/app.js?v=12"></script>
+  <script type="module" src="js/app.js?v=13"></script>
 
 </body>
 </html>

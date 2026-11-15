@@ -1,10 +1,11 @@
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  NEXUS-7 — Cerradura Inteligente Autónoma IoT (Versión Teclado 4x4)      ║
+// ║  NEXUS-7 — Cerradura Inteligente Autónoma IoT (Apertura Continua 4x4)   ║
 // ║  ESP32 + Matriz 4x4 + Servo (Pin 18) + Firebase Realtime Database        ║
-// ║  • Matriz 4x4: PIN maestro "201106" + '#' (Autocierre en 15s)            ║
-// ║  • Tecla '*': Cancela entrada o cierra cerradura inmediatamente          ║
-// ║  • Servo corregido: CERRADO = 180° / ABIERTO = 0° (anti-jitter)          ║
-// ║  • Web / Facial: Apertura manual sin límite de tiempo (cierre manual)   ║
+// ║  • Matriz 4x4: PIN maestro "201106" + '#' -> Apertura continua infinita ║
+// ║  • Tecla '*' (o 'D'): Bloquea / Cierra manualmente la cerradura         ║
+// ║  • Servo mecánico: CERRADO = 180° / ABIERTO = 0° (anti-jitter)           ║
+// ║  • Web / Facial / Teclado: Cierre manual (se mantiene abierta hasta     ║
+// ║    pulsar '*' en el teclado o 'Cerrar' en la web)                        ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 #include <WiFi.h>
@@ -31,11 +32,11 @@ const String FIREBASE_HOST = "https://nexus-cerradura-default-rtdb.firebaseio.co
 #define PIN_SERVO 18
 Servo miServo;
 
-// Calibración mecánica original:
-// CERRADO:   0°
-// ABIERTO: 180°
-const int ANGULO_CERRADO = 0;
-const int ANGULO_ABIERTO = 180;
+// Calibración mecánica:
+// CERRADO: 180° (traba hacia abajo)
+// ABIERTO:   0° (libera el cerrojo hacia arriba)
+const int ANGULO_CERRADO = 180;
+const int ANGULO_ABIERTO = 0;
 
 // Indicadores LED
 #define LED_ROJO  15  // Encendido cuando está CERRADO / Alarma
@@ -54,11 +55,9 @@ char teclas[FILAS][COLUMNAS] = {
   {'*', '0', '#', 'D'}
 };
 
-// Pines GPIO asignados al ESP32 (100% seguros, con pull-up y sin conflicto de boot):
-// Filas (R1 - R4)
-byte pinesFilas[FILAS]       = {19, 21, 22, 23}; 
-// Columnas (C1 - C4)
-byte pinesColumnas[COLUMNAS] = {25, 26, 27, 32}; 
+// Pines GPIO asignados al ESP32:
+byte pinesFilas[FILAS]       = {19, 21, 22, 23}; // R1, R2, R3, R4
+byte pinesColumnas[COLUMNAS] = {25, 26, 27, 32}; // C1, C2, C3, C4
 
 Keypad teclado = Keypad(makeKeymap(teclas), pinesFilas, pinesColumnas, FILAS, COLUMNAS);
 
@@ -72,18 +71,13 @@ String bufferClave = "";
 String estadoCerradura = "CERRADO";
 String metodoAcceso    = "---";
 
-// Control de autocierre
-bool autoCierreActivo               = false;
-unsigned long tiempoApertura        = 0;
-const unsigned long TIEMPO_AUTOCIERRE_TECLADO = 15000UL; // 15 segundos para Teclado 4x4
-
 // Temporizador para consultar Firebase (cada 1.5s sin bloquear el loop)
 unsigned long ultimoCheckFirebase   = 0;
 const unsigned long INTERVALO_CHECK = 1500UL;
 
 // Declaraciones de funciones
 void moverServo(int angulo);
-void abrirCerradura(const char* metodo, bool conAutoCierre);
+void abrirCerradura(const char* metodo);
 void cerrarCerradura();
 void actualizarFirebase(const String& estado, const String& metodo);
 void verificarComandosFirebase();
@@ -96,7 +90,7 @@ void moverServo(int angulo) {
   miServo.setPeriodHertz(50);
   miServo.attach(PIN_SERVO, 500, 2400);
   miServo.write(angulo);
-  delay(500); // 500ms suficiente para que el brazo complete el recorrido
+  delay(500); // 500ms suficiente para que el brazo complete el recorrido mecánico
   miServo.detach(); // Detach apaga los pulsos PWM: elimina vibración, calor y consumo
 }
 
@@ -146,15 +140,14 @@ void verificarComandosFirebase() {
         if (payload == "true") {
           Serial.println("🌐 [WEB] Orden de APERTURA recibida desde el panel.");
           
-          // Resetear orden a false inmediatamente
           if (https.begin(client, urlAbrir)) {
             https.addHeader("Content-Type", "application/json");
             https.PUT("false");
             https.end();
           }
           
-          // Apertura web/facial: SIN autocierre (se cierra manualmente)
-          abrirCerradura("WEB_MANUAL", false);
+          // Apertura manual web (se mantiene abierta hasta pulsar Cerrar)
+          abrirCerradura("WEB_MANUAL");
           return;
         }
       } else {
@@ -176,7 +169,6 @@ void verificarComandosFirebase() {
         if (payload == "true") {
           Serial.println("🔒 [WEB] Orden de CIERRE MANUAL recibida desde el panel.");
           
-          // Resetear orden a false inmediatamente
           if (https.begin(client, urlCerrar)) {
             https.addHeader("Content-Type", "application/json");
             https.PUT("false");
@@ -196,36 +188,27 @@ void verificarComandosFirebase() {
 // ════════════════════════════════════════════════════════════
 //  ACCIONES DE CERRADURA (SERVO Y LEDS)
 // ════════════════════════════════════════════════════════════
-void abrirCerradura(const char* metodo, bool conAutoCierre) {
-  metodoAcceso     = metodo;
-  estadoCerradura  = "ABIERTO";
-  autoCierreActivo = conAutoCierre;
-  tiempoApertura   = millis();
+void abrirCerradura(const char* metodo) {
+  metodoAcceso    = metodo;
+  estadoCerradura = "ABIERTO";
   
   digitalWrite(LED_ROJO,  LOW);
   digitalWrite(LED_VERDE, HIGH);
-  moverServo(ANGULO_ABIERTO); // 180°: Abre cerrojo
+  moverServo(ANGULO_ABIERTO); // 0°: Libera cerrojo hacia arriba
   
   actualizarFirebase("ABIERTO", metodoAcceso);
-  
-  if (conAutoCierre) {
-    Serial.printf("🔓 ABIERTO — Método: %s (Autocierre en 15s)\n", metodo);
-  } else {
-    Serial.printf("🔓 ABIERTO — Método: %s (Cierre manual requerido)\n", metodo);
-  }
+  Serial.printf("🔓 ABIERTO — Método: %s (Apertura continua hasta presionar '*' o 'Cerrar')\n", metodo);
 }
 
 void cerrarCerradura() {
-  estadoCerradura  = "CERRADO";
-  autoCierreActivo = false;
-  bufferClave      = ""; // Limpiar cualquier dígito pendiente
+  estadoCerradura = "CERRADO";
+  bufferClave     = ""; // Limpiar cualquier dígito pendiente
   
   digitalWrite(LED_ROJO,  HIGH);
   digitalWrite(LED_VERDE, LOW);
-  moverServo(ANGULO_CERRADO); // 0°: Bloquea cerrojo
+  moverServo(ANGULO_CERRADO); // 180°: Traba cerrojo hacia abajo
 
   actualizarFirebase("CERRADO", metodoAcceso);
-  
   Serial.println("🔒 Cerradura bloqueada.");
 }
 
@@ -238,53 +221,56 @@ void procesarTeclado() {
 
   Serial.printf("⌨️ Tecla pulsada: [%c]\n", tecla);
 
-  // TECLA '*' -> CANCELAR / BORRAR / BLOQUEO INMEDIATO
-  if (tecla == '*') {
-    if (estadoCerradura == "ABIERTO") {
-      Serial.println("🔒 Tecla '*' pulsada mientras estaba abierto: Bloqueando inmediatamente...");
+  // 1. SI LA CERRADURA ESTÁ ABIERTA:
+  // Al pulsar '*' o 'D' se bloquea/cierra inmediatamente
+  if (estadoCerradura == "ABIERTO") {
+    if (tecla == '*' || tecla == 'D') {
+      Serial.printf("🔒 Botón manual de cierre [%c] presionado en la matriz. Bloqueando...\n", tecla);
       cerrarCerradura();
-    } else {
-      Serial.println("❌ Entrada cancelada / Buffer borrado.");
-      bufferClave = "";
-      // Breve parpadeo de LED rojo como feedback de cancelación
-      digitalWrite(LED_ROJO, LOW); delay(100); digitalWrite(LED_ROJO, HIGH);
+      return;
     }
+  }
+
+  // 2. SI LA CERRADURA ESTÁ CERRADA:
+  // Tecla '*' -> Cancelar / borrar buffer
+  if (tecla == '*') {
+    Serial.println("❌ Entrada cancelada / Buffer borrado.");
+    bufferClave = "";
+    digitalWrite(LED_ROJO, LOW); delay(100); digitalWrite(LED_ROJO, HIGH);
     return;
   }
 
-  // TECLA '#' -> CONFIRMAR CLAVE (ENTER)
+  // Tecla '#' -> Confirmar PIN (Enter)
   if (tecla == '#') {
     Serial.printf("🔑 Verificando PIN ingresado: [%s]\n", bufferClave.c_str());
     
     if (bufferClave == CLAVE_MAESTRA) {
-      Serial.println("✅ PIN CORRECTO. Desbloqueando por 15 segundos...");
-      // Feedback visual LED verde
+      Serial.println("✅ PIN CORRECTO. Desbloqueando de forma continua (abierta hasta presionar '*')...");
       for (int i = 0; i < 2; i++) {
         digitalWrite(LED_VERDE, HIGH); delay(80);
         digitalWrite(LED_VERDE, LOW);  delay(80);
       }
-      abrirCerradura("TECLADO_4X4", true);
+      abrirCerradura("TECLADO_4X4"); // Abre sin temporizador de cierre
     } else {
       Serial.println("⛔ PIN INCORRECTO. Acceso denegado.");
-      // Feedback error LED rojo
       for (int i = 0; i < 3; i++) {
         digitalWrite(LED_ROJO, LOW);  delay(100);
         digitalWrite(LED_ROJO, HIGH); delay(100);
       }
     }
     
-    bufferClave = ""; // Limpiar después de evaluar
+    bufferClave = ""; // Limpiar tras verificar
     return;
   }
 
-  // DÍGITOS O LETRAS (1-9, 0, A, B, C, D)
+  // Dígitos numéricos o caracteres
   if (bufferClave.length() < 10) {
     bufferClave += tecla;
     Serial.printf("Entrada actual (%d digitos): ", bufferClave.length());
     for (unsigned int i = 0; i < bufferClave.length(); i++) Serial.print("*");
     Serial.println();
     
-    // Pequeño parpadeo verde como feedback táctil
+    // Feedback táctil con parpadeo suave del LED verde
     digitalWrite(LED_VERDE, HIGH);
     delay(40);
     digitalWrite(LED_VERDE, LOW);
@@ -304,7 +290,7 @@ void setup() {
   digitalWrite(LED_ROJO,  HIGH); // Comienza CERRADO
   digitalWrite(LED_VERDE, LOW);
 
-  // Posición inicial del Servomotor: Bloqueado (0°)
+  // Posición inicial del Servomotor: Bloqueado (180°)
   moverServo(ANGULO_CERRADO);
 
   Serial.println("\n╔═══════════════════════════════════════════════════════╗");
@@ -331,10 +317,10 @@ void setup() {
     Serial.printf("\nWi-Fi Conectado. IP: %s\n", WiFi.localIP().toString().c_str());
     actualizarFirebase("CERRADO", "INICIO");
   } else {
-    Serial.println("\nWi-Fi no conectado. Operando en modo local autónomo (Teclado 4x4 operativo).");
+    Serial.println("\nWi-Fi no conectado. Modo local autónomo (Teclado 4x4 operativo).");
   }
 
-  Serial.println("Sistema 100% operativo y listo para recibir PIN (Ej: 201106#).\n");
+  Serial.println("Sistema 100% operativo. Abre con [201106#] y cierra con [*].\n");
 }
 
 // ════════════════════════════════════════════════════════════
@@ -343,21 +329,13 @@ void setup() {
 void loop() {
   unsigned long ahora = millis();
 
-  // 1. Lectura inmediata de teclas en la matriz 4x4 (sin delay)
+  // 1. Lectura inmediata de teclas en la matriz 4x4
   procesarTeclado();
 
   // 2. Consultar comandos en Firebase (Abrir / Cerrar remoto)
   if (ahora - ultimoCheckFirebase >= INTERVALO_CHECK) {
     ultimoCheckFirebase = ahora;
     verificarComandosFirebase();
-  }
-
-  // 3. Autocierre de 15 segundos SOLO para apertura por Teclado 4x4
-  if (estadoCerradura == "ABIERTO" && autoCierreActivo) {
-    if (ahora - tiempoApertura >= TIEMPO_AUTOCIERRE_TECLADO) {
-      Serial.println("⏰ [TECLADO] 15 segundos cumplidos. Bloqueando servo automáticamente...");
-      cerrarCerradura();
-    }
   }
 
   yield();
