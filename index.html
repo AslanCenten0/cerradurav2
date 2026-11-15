@@ -7,13 +7,13 @@
   <title>Nexus Access</title>
 
   <!-- PWA Manifest & Icons -->
-  <link rel="manifest" href="manifest.webmanifest?v=11" />
+  <link rel="manifest" href="manifest.webmanifest?v=12" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 
   <!-- Apple System Font & Estilos -->
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=12" />
 
   <!-- Biblioteca Face-API (TensorFlow.js WebGL) -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
@@ -197,26 +197,21 @@
           </div>
         </div>
 
-        <!-- 3. Modo RFID Libre -->
+        <!-- 3. Teclado Físico Matriz 4x4 -->
         <div class="opt-card">
           <div class="opt-header">
             <span class="opt-title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
-                <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
-                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                <path d="M7 8h.01M12 8h.01M17 8h.01M7 12h.01M12 12h.01M17 12h.01M7 16h.01M12 16h.01M17 16h.01"></path>
               </svg>
-              Modo Libre RFID
+              Teclado Físico 4x4
             </span>
-            <span class="opt-badge badge-neutral" id="badgeRfidLibre">INACTIVO</span>
+            <span class="opt-badge badge-active">PIN: 201106#</span>
           </div>
-          <button class="btn-action-secondary" id="btnRfidLibre" onclick="activarRfidLibre()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            <span id="textoBtnRfid">Activar (60s)</span>
-          </button>
+          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.45;">
+            Ingresa <strong>201106</strong> seguido de <strong>#</strong> en la matriz para desbloquear por 15 segundos. Presiona <strong>*</strong> para cancelar o bloquear inmediatamente.
+          </div>
         </div>
 
         <!-- 4. Actividad Reciente -->
@@ -236,7 +231,7 @@
               <span class="log-tag">OK</span>
             </li>
             <li class="log-item">
-              <span>Tarjeta RFID (15s)</span>
+              <span>Teclado Matriz 4x4</span>
               <span class="log-tag">OK</span>
             </li>
           </ul>
@@ -442,33 +437,6 @@
         window._firebaseCerrarRemoto("Panel Web");
       }
     }
-
-    function activarRfidLibre() {
-      const badge = document.getElementById('badgeRfidLibre');
-      const btnTexto = document.getElementById('textoBtnRfid');
-      const btn = document.getElementById('btnRfidLibre');
-
-      badge.textContent = "ACTIVO";
-      badge.className = "opt-badge badge-active";
-      btn.disabled = true;
-
-      let seg = 60;
-      btnTexto.textContent = `${seg}s`;
-
-      const timer = setInterval(() => {
-        seg--;
-        btnTexto.textContent = `${seg}s`;
-        if (seg <= 0) {
-          clearInterval(timer);
-          badge.textContent = "INACTIVO";
-          badge.className = "opt-badge badge-neutral";
-          btnTexto.textContent = "Activar (60s)";
-          btn.disabled = false;
-        }
-      }, 1000);
-
-      agregarLog("RFID Libre", "60 segundos");
-    }
   </script>
 
   <!-- Firebase Realtime Database SDK -->
@@ -507,7 +475,9 @@
           const btnAbrir = document.getElementById('btnAccionAbrir');
 
           if (ultimoMetodo && data.metodo) {
-            ultimoMetodo.textContent = data.metodo;
+            let label = data.metodo;
+            if (label === 'TECLADO_4X4') label = 'TECLADO 4X4';
+            ultimoMetodo.textContent = label;
           }
 
           if (data.estado === "ABIERTO") {
@@ -520,7 +490,10 @@
             if (statusPulse) statusPulse.className = "pulse-ring active";
             if (statusText) statusText.textContent = "Cerradura abierta";
             if (btnAbrir) btnAbrir.disabled = true;
-            agregarLog("Apertura", data.metodo || "ESP32");
+            
+            let logDesc = data.metodo || "ESP32";
+            if (logDesc === "TECLADO_4X4") logDesc = "Teclado 4x4 (15s)";
+            agregarLog("Apertura", logDesc);
           } else {
             if (texto) texto.textContent = "CERRADO";
             if (badge) {
@@ -567,7 +540,7 @@
       }
     };
 
-    // Orden de cierre manual (bloquea el servomotor a 0 grados en el ESP32)
+    // Orden de cierre manual (bloquea el servomotor en el ESP32)
     window._firebaseCerrarRemoto = async function(metodo = 'Boton Cerrar') {
       const btnAbrir = document.getElementById('btnAccionAbrir');
       const btnCerrar = document.getElementById('btnAccionCerrar');
@@ -609,7 +582,7 @@
   </script>
 
   <!-- Orquestador Principal ES6 con Cache Busting -->
-  <script type="module" src="js/app.js?v=11"></script>
+  <script type="module" src="js/app.js?v=12"></script>
 
 </body>
 </html>

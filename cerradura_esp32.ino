@@ -1,18 +1,17 @@
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  NEXUS-7 — Cerradura Inteligente Autónoma IoT (Versión Estable v6.0)     ║
-// ║  ESP32 + RFID RC522 + Servo (Pin 18) + Firebase Realtime Database        ║
-// ║  • Cierre manual web: Se mantiene abierta hasta presionar "Cerrar"       ║
-// ║  • Cierre automático RFID: Temporizador de 15 segundos                  ║
-// ║  • Servo en Pin 18 con detach anti-jitter (cero vibración/calor)         ║
-// ║  • SPI RC522 en Pin 4 (SCK) para no colisionar con el servo              ║
+// ║  NEXUS-7 — Cerradura Inteligente Autónoma IoT (Versión Teclado 4x4)      ║
+// ║  ESP32 + Matriz 4x4 + Servo (Pin 18) + Firebase Realtime Database        ║
+// ║  • Matriz 4x4: PIN maestro "201106" + '#' (Autocierre en 15s)            ║
+// ║  • Tecla '*': Cancela entrada o cierra cerradura inmediatamente          ║
+// ║  • Servo corregido: CERRADO = 180° / ABIERTO = 0° (anti-jitter)          ║
+// ║  • Web / Facial: Apertura manual sin límite de tiempo (cierre manual)   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ESP32Servo.h>
-#include <SPI.h>
-#include <MFRC522.h>
+#include <Keypad.h>
 #include <ArduinoJson.h>
 
 // ────────────────────────────────────────────────────────────
@@ -27,46 +26,60 @@ const char* password = "educar_2018";
 const String FIREBASE_HOST = "https://nexus-cerradura-default-rtdb.firebaseio.com";
 
 // ────────────────────────────────────────────────────────────
-//  3. HARDWARE: PINES Y DEFINICIONES
+//  3. HARDWARE: SERVO Y CALIBRACIÓN DE ÁNGULOS
 // ────────────────────────────────────────────────────────────
-// Servo en GPIO 18
 #define PIN_SERVO 18
 Servo miServo;
 
-// Lector RFID RC522 (Pines SPI dedicados)
-// IMPORTANTE: SCK asignado al Pin 4 para que NO colisione con el servo en Pin 18
-#define RFID_SCK  4   // SCK -> Pin 4
-#define RFID_MISO 19  // MISO -> Pin 19
-#define RFID_MOSI 23  // MOSI -> Pin 23
-#define RFID_SS   5   // SDA/SS -> Pin 5
-#define RFID_RST  22  // RST -> Pin 22
-
-MFRC522 mfrc522(RFID_SS, RFID_RST);
-byte usuarioAutorizado[4] = {0x62, 0x55, 0x14, 0x5C}; // UID de tarjeta física autorizada
+// Calibración mecánica corregida:
+// CERRADO: 180° (traba hacia abajo)
+// ABIERTO:   0° (libera el cerrojo hacia arriba)
+const int ANGULO_CERRADO = 180;
+const int ANGULO_ABIERTO = 0;
 
 // Indicadores LED
-#define LED_ROJO  15
-#define LED_VERDE  2
+#define LED_ROJO  15  // Encendido cuando está CERRADO / Alarma
+#define LED_VERDE  2  // Encendido cuando está ABIERTO / Acceso OK
 
 // ────────────────────────────────────────────────────────────
-//  4. ESTADOS Y TIEMPOS
+//  4. HARDWARE: MATRIZ DE TECLADO 4x4
+// ────────────────────────────────────────────────────────────
+const byte FILAS = 4;
+const byte COLUMNAS = 4;
+
+char teclas[FILAS][COLUMNAS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+
+// Pines GPIO asignados al ESP32 (100% seguros, con pull-up y sin conflicto de boot):
+// Filas (R1 - R4)
+byte pinesFilas[FILAS]       = {19, 21, 22, 23}; 
+// Columnas (C1 - C4)
+byte pinesColumnas[COLUMNAS] = {25, 26, 27, 32}; 
+
+Keypad teclado = Keypad(makeKeymap(teclas), pinesFilas, pinesColumnas, FILAS, COLUMNAS);
+
+// Clave maestra para apertura física por teclado
+const String CLAVE_MAESTRA = "201106";
+String bufferClave = "";
+
+// ────────────────────────────────────────────────────────────
+//  5. ESTADOS Y TIEMPOS
 // ────────────────────────────────────────────────────────────
 String estadoCerradura = "CERRADO";
 String metodoAcceso    = "---";
 
 // Control de autocierre
-bool autoCierreActivo              = false;
-unsigned long tiempoApertura       = 0;
-const unsigned long TIEMPO_RFID_AUTOCIERRE = 15000UL; // 15 segundos SOLO para RFID
+bool autoCierreActivo               = false;
+unsigned long tiempoApertura        = 0;
+const unsigned long TIEMPO_AUTOCIERRE_TECLADO = 15000UL; // 15 segundos para Teclado 4x4
 
 // Temporizador para consultar Firebase (cada 1.5s sin bloquear el loop)
 unsigned long ultimoCheckFirebase   = 0;
 const unsigned long INTERVALO_CHECK = 1500UL;
-
-// Modo RFID Libre (Bypass por 60 segundos)
-bool          rfidLibre      = false;
-unsigned long tRfidLibre     = 0;
-const unsigned long DUR_RFID_LIBRE = 60000UL;
 
 // Declaraciones de funciones
 void moverServo(int angulo);
@@ -74,6 +87,7 @@ void abrirCerradura(const char* metodo, bool conAutoCierre);
 void cerrarCerradura();
 void actualizarFirebase(const String& estado, const String& metodo);
 void verificarComandosFirebase();
+void procesarTeclado();
 
 // ════════════════════════════════════════════════════════════
 //  CONTROL DE SERVO SUAVE Y SIN VIBRACIONES (ANTI-JITTER)
@@ -82,15 +96,13 @@ void moverServo(int angulo) {
   miServo.setPeriodHertz(50);
   miServo.attach(PIN_SERVO, 500, 2400);
   miServo.write(angulo);
-  delay(500); // 500ms es suficiente para que el brazo complete el recorrido
+  delay(500); // 500ms suficiente para que el brazo complete el recorrido
   miServo.detach(); // Detach apaga los pulsos PWM: elimina vibración, calor y consumo
 }
 
 // ════════════════════════════════════════════════════════════
 //  SINCRONIZACIÓN CON FIREBASE (NUBE)
 // ════════════════════════════════════════════════════════════
-
-// Actualiza el estado en la nube para que la web en Vercel refleje el estado en vivo
 void actualizarFirebase(const String& estado, const String& metodo) {
   if (WiFi.status() != WL_CONNECTED) return;
   
@@ -121,7 +133,7 @@ void verificarComandosFirebase() {
   HTTPClient https;
   https.setTimeout(2000);
 
-  // 1. Si está CERRADO: Consultar si enviaron orden de abrir
+  // 1. Si está CERRADO: Consultar si enviaron orden de abrir desde la web
   if (estadoCerradura != "ABIERTO") {
     String urlAbrir = FIREBASE_HOST + "/cerradura/comando_abrir.json";
     if (https.begin(client, urlAbrir)) {
@@ -132,7 +144,7 @@ void verificarComandosFirebase() {
         https.end();
 
         if (payload == "true") {
-          Serial.println("🌐 [VERCEL] Orden de APERTURA recibida desde la web.");
+          Serial.println("🌐 [WEB] Orden de APERTURA recibida desde el panel.");
           
           // Resetear orden a false inmediatamente
           if (https.begin(client, urlAbrir)) {
@@ -141,7 +153,7 @@ void verificarComandosFirebase() {
             https.end();
           }
           
-          // Apertura manual web: NO tiene autocierre (se cierra manualmente)
+          // Apertura web/facial: SIN autocierre (se cierra manualmente)
           abrirCerradura("WEB_MANUAL", false);
           return;
         }
@@ -162,7 +174,7 @@ void verificarComandosFirebase() {
         https.end();
 
         if (payload == "true") {
-          Serial.println("🔒 [VERCEL] Orden de CIERRE MANUAL recibida desde la web.");
+          Serial.println("🔒 [WEB] Orden de CIERRE MANUAL recibida desde el panel.");
           
           // Resetear orden a false inmediatamente
           if (https.begin(client, urlCerrar)) {
@@ -192,12 +204,12 @@ void abrirCerradura(const char* metodo, bool conAutoCierre) {
   
   digitalWrite(LED_ROJO,  LOW);
   digitalWrite(LED_VERDE, HIGH);
-  moverServo(180); // Giro de apertura mecánica del servo
+  moverServo(ANGULO_ABIERTO); // 0°: Libera cerrojo
   
   actualizarFirebase("ABIERTO", metodoAcceso);
   
   if (conAutoCierre) {
-    Serial.printf("🔓 ABIERTO — Método: %s (Cierre automático en 15s)\n", metodo);
+    Serial.printf("🔓 ABIERTO — Método: %s (Autocierre en 15s)\n", metodo);
   } else {
     Serial.printf("🔓 ABIERTO — Método: %s (Cierre manual requerido)\n", metodo);
   }
@@ -206,14 +218,77 @@ void abrirCerradura(const char* metodo, bool conAutoCierre) {
 void cerrarCerradura() {
   estadoCerradura  = "CERRADO";
   autoCierreActivo = false;
+  bufferClave      = ""; // Limpiar cualquier dígito pendiente
   
   digitalWrite(LED_ROJO,  HIGH);
   digitalWrite(LED_VERDE, LOW);
-  moverServo(0); // Giro de bloqueo mecánico a 0 grados
+  moverServo(ANGULO_CERRADO); // 180°: Traba cerrojo
 
   actualizarFirebase("CERRADO", metodoAcceso);
   
   Serial.println("🔒 Cerradura bloqueada.");
+}
+
+// ════════════════════════════════════════════════════════════
+//  PROCESAMIENTO DE TECLADO MATRICIAL 4x4
+// ════════════════════════════════════════════════════════════
+void procesarTeclado() {
+  char tecla = teclado.getKey();
+  if (!tecla) return;
+
+  Serial.printf("⌨️ Tecla pulsada: [%c]\n", tecla);
+
+  // TECLA '*' -> CANCELAR / BORRAR / BLOQUEO INMEDIATO
+  if (tecla == '*') {
+    if (estadoCerradura == "ABIERTO") {
+      Serial.println("🔒 Tecla '*' pulsada mientras estaba abierto: Bloqueando inmediatamente...");
+      cerrarCerradura();
+    } else {
+      Serial.println("❌ Entrada cancelada / Buffer borrado.");
+      bufferClave = "";
+      // Breve parpadeo de LED rojo como feedback de cancelación
+      digitalWrite(LED_ROJO, LOW); delay(100); digitalWrite(LED_ROJO, HIGH);
+    }
+    return;
+  }
+
+  // TECLA '#' -> CONFIRMAR CLAVE (ENTER)
+  if (tecla == '#') {
+    Serial.printf("🔑 Verificando PIN ingresado: [%s]\n", bufferClave.c_str());
+    
+    if (bufferClave == CLAVE_MAESTRA) {
+      Serial.println("✅ PIN CORRECTO. Desbloqueando por 15 segundos...");
+      // Feedback visual LED verde
+      for (int i = 0; i < 2; i++) {
+        digitalWrite(LED_VERDE, HIGH); delay(80);
+        digitalWrite(LED_VERDE, LOW);  delay(80);
+      }
+      abrirCerradura("TECLADO_4X4", true);
+    } else {
+      Serial.println("⛔ PIN INCORRECTO. Acceso denegado.");
+      // Feedback error LED rojo
+      for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_ROJO, LOW);  delay(100);
+        digitalWrite(LED_ROJO, HIGH); delay(100);
+      }
+    }
+    
+    bufferClave = ""; // Limpiar después de evaluar
+    return;
+  }
+
+  // DÍGITOS O LETRAS (1-9, 0, A, B, C, D)
+  if (bufferClave.length() < 10) {
+    bufferClave += tecla;
+    Serial.printf("Entrada actual (%d digitos): ", bufferClave.length());
+    for (unsigned int i = 0; i < bufferClave.length(); i++) Serial.print("*");
+    Serial.println();
+    
+    // Pequeño parpadeo verde como feedback táctil
+    digitalWrite(LED_VERDE, HIGH);
+    delay(40);
+    digitalWrite(LED_VERDE, LOW);
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -226,20 +301,18 @@ void setup() {
   // Configuración de LEDs indicadores
   pinMode(LED_ROJO,  OUTPUT);
   pinMode(LED_VERDE, OUTPUT);
-  digitalWrite(LED_ROJO,  HIGH);
+  digitalWrite(LED_ROJO,  HIGH); // Comienza CERRADO
   digitalWrite(LED_VERDE, LOW);
 
-  // Posición inicial del Servomotor (bloqueado a 0 grados)
-  moverServo(0);
+  // Posición inicial del Servomotor: Bloqueado (180°)
+  moverServo(ANGULO_CERRADO);
 
-  // SPI para lector RFID RC522 (SCK=4, MISO=19, MOSI=23, SS=5)
-  // De esta forma el Pin 18 queda 100% libre para el servo
-  SPI.begin(RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SS);
-  mfrc522.PCD_Init();
-
-  Serial.println("\n--- NEXUS-7 CONTROL DE ACCESO v6.0 ---");
-  Serial.printf("Servo Pin: %d | RFID SCK: %d, MISO: %d, MOSI: %d, SS: %d\n", 
-                PIN_SERVO, RFID_SCK, RFID_MISO, RFID_MOSI, RFID_SS);
+  Serial.println("\n╔═══════════════════════════════════════════════════════╗");
+  Serial.println("║   NEXUS-7 CONTROL DE ACCESO — TECLADO MATRIZ 4x4     ║");
+  Serial.println("╚═══════════════════════════════════════════════════════╝");
+  Serial.printf("Servo GPIO: %d (Cerrado: %d°, Abierto: %d°)\n", PIN_SERVO, ANGULO_CERRADO, ANGULO_ABIERTO);
+  Serial.printf("Filas Teclado:    [%d, %d, %d, %d]\n", pinesFilas[0], pinesFilas[1], pinesFilas[2], pinesFilas[3]);
+  Serial.printf("Columnas Teclado: [%d, %d, %d, %d]\n", pinesColumnas[0], pinesColumnas[1], pinesColumnas[2], pinesColumnas[3]);
 
   // Conexión Wi-Fi
   WiFi.mode(WIFI_STA);
@@ -258,10 +331,10 @@ void setup() {
     Serial.printf("\nWi-Fi Conectado. IP: %s\n", WiFi.localIP().toString().c_str());
     actualizarFirebase("CERRADO", "INICIO");
   } else {
-    Serial.println("\nWi-Fi no conectado. Operando en modo local (RFID seguirá funcionando).");
+    Serial.println("\nWi-Fi no conectado. Operando en modo local autónomo (Teclado 4x4 operativo).");
   }
 
-  Serial.println("Sistema 100% operativo y listo.\n");
+  Serial.println("Sistema 100% operativo y listo para recibir PIN (Ej: 201106#).\n");
 }
 
 // ════════════════════════════════════════════════════════════
@@ -270,54 +343,21 @@ void setup() {
 void loop() {
   unsigned long ahora = millis();
 
-  // 1. Consultar comandos en Firebase (Abrir / Cerrar)
+  // 1. Lectura inmediata de teclas en la matriz 4x4 (sin delay)
+  procesarTeclado();
+
+  // 2. Consultar comandos en Firebase (Abrir / Cerrar remoto)
   if (ahora - ultimoCheckFirebase >= INTERVALO_CHECK) {
     ultimoCheckFirebase = ahora;
     verificarComandosFirebase();
   }
 
-  // 2. Cierre automático de 15 segundos ÚNICAMENTE para apertura por RFID
+  // 3. Autocierre de 15 segundos SOLO para apertura por Teclado 4x4
   if (estadoCerradura == "ABIERTO" && autoCierreActivo) {
-    if (ahora - tiempoApertura >= TIEMPO_RFID_AUTOCIERRE) {
-      Serial.println("⏰ [RFID] 15 segundos cumplidos. Bloqueando servo automáticamente...");
+    if (ahora - tiempoApertura >= TIEMPO_AUTOCIERRE_TECLADO) {
+      Serial.println("⏰ [TECLADO] 15 segundos cumplidos. Bloqueando servo automáticamente...");
       cerrarCerradura();
     }
-  }
-
-  // 3. Expiración de modo RFID Libre (Bypass 60 segundos)
-  if (rfidLibre && (ahora - tRfidLibre >= DUR_RFID_LIBRE)) {
-    rfidLibre = false;
-    Serial.println("[RFID] Bypass de 60s expirado.");
-  }
-
-  // 4. Lectura de tarjeta física RFID
-  if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-    Serial.print("Tarjeta detectada. UID:");
-    for (byte i = 0; i < mfrc522.uid.size; i++) {
-      Serial.printf(" %02X", mfrc522.uid.uidByte[i]);
-    }
-    Serial.println();
-
-    if (rfidLibre) {
-      // Con RFID Libre: apertura con temporizador de 15s
-      abrirCerradura("RFID_LIBRE", true);
-    } else {
-      bool autorizada = (mfrc522.uid.size == 4);
-      for (byte i = 0; i < 4 && autorizada; i++) {
-        if (mfrc522.uid.uidByte[i] != usuarioAutorizado[i]) autorizada = false;
-      }
-
-      if (autorizada) {
-        // Tarjeta autorizada: abre el servo con autocierre de 15 segundos
-        abrirCerradura("RFID", true);
-      } else {
-        Serial.println("RFID DENEGADO — Tarjeta no autorizada.");
-        digitalWrite(LED_ROJO, LOW); delay(150); digitalWrite(LED_ROJO, HIGH);
-      }
-    }
-
-    mfrc522.PICC_HaltA();
-    mfrc522.PCD_StopCrypto1();
   }
 
   yield();

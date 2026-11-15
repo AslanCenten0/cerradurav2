@@ -178,7 +178,7 @@ export class NexusApp {
    */
   registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=11')
+      navigator.serviceWorker.register('sw.js?v=12')
         .then(reg => {
           console.log("✅ PWA Service Worker registrado con éxito:", reg.scope);
           reg.update().catch(() => {});
